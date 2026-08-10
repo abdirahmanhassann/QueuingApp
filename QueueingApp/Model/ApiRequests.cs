@@ -19,14 +19,12 @@
             public string Password { get; set; }
         }
 
-        public struct NewAccountRequest
+        public struct NewEmployeeAccountRequest
         {
+            public string Name { get; set; }
             public string Email { get; set; }
-            public string DisplayName { get; set; }
             public string Password { get; set; }
-            public string GymName { get; set; }
-            public long Country { get; set; }
-            public long City { get; set; }
+            public int? ShopId { get; set; }
         }
 
     }

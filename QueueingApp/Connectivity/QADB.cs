@@ -33,17 +33,15 @@ namespace QueueingApp.Connectivity
             _conn.ExecuteStoredProcedureNoReturn("account.ExtendAccessToken", sqlParams.ToArray());
         }
 
-        public void Signup(string email, string displayName, string password, string salt, string gymName, long countryId, long cityId)
+        public void Signup(string email, string name, string password, string salt, int shopId)
         {
             List<SqlParameter> sqlParams = new();
-            sqlParams.Add(_conn.GenerateInputString("@Email", email, 255));
-            sqlParams.Add(_conn.GenerateInputString("@DisplayName", displayName, 25));
-            sqlParams.Add(_conn.GenerateInputString("@Password", password, 255));
+            sqlParams.Add(_conn.GenerateInputString("@Email", email, 20));
+            sqlParams.Add(_conn.GenerateInputString("@Name", name, 50));
+            sqlParams.Add(_conn.GenerateInputString("@Password", password, 50));
             sqlParams.Add(_conn.GenerateInputString("@Salt", salt, 12));
-            sqlParams.Add(_conn.GenerateInputString("@GymName", gymName, 50));
-            sqlParams.Add(_conn.GenerateInputLong("@CountryId", countryId));
-            sqlParams.Add(_conn.GenerateInputLong("@CityId", cityId));
-            _conn.ExecuteStoredProcedureNoReturn("account.CreateNew", sqlParams.ToArray());
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            _conn.ExecuteStoredProcedureNoReturn("CreateEmployee", sqlParams.ToArray());
         }
 
         public void LogError(string source, string message, long accountId)
@@ -59,8 +57,14 @@ namespace QueueingApp.Connectivity
         {
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputString("@Email", email, 255));
-            return _conn.ExecuteStoredProcedureAsDataRow("account.GetByEmail", sqlParams.ToArray());
+            return _conn.ExecuteStoredProcedureAsDataRow("GetEmployeeByEmail", sqlParams.ToArray());
         }
 
+        public DataRow GetShopFromAccount(long accountId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputLong("@Id", accountId));
+            return _conn.ExecuteStoredProcedureAsDataRow("GetShopFromAccount", sqlParams.ToArray());
+        }
     }
 }

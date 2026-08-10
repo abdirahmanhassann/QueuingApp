@@ -4,8 +4,9 @@ using System.Xml;
 using static QueueingApp.Model.ApiRequests;
 using static QueueingApp.Model.ApiResponses;
 using Newtonsoft.Json;
-using WCL_BE.Security;
-
+using QueueingApp.Security;
+using QueueingApp.Processors;
+using static QueueingApp.Helpers.ApiHelper;
 namespace QueueingApp.Controllers
 {
     [ApiController]
@@ -21,29 +22,29 @@ namespace QueueingApp.Controllers
             _security = new(config);
         }
 
-        [HttpPost]
+        [HttpPost("login")]
         public string Login(LoginRequest req)
         {
             GenericResponse ret = _proc.Login(req.Email, req.Password);
             return JsonConvert.SerializeObject(ret, Newtonsoft.Json.Formatting.Indented);
         }
 
-        [HttpPost]
-        public string Signup(NewAccountRequest req)
+        [HttpPost("signup")]
+        public string Signup(NewEmployeeAccountRequest req)
         {
-            GenericResponse ret = _proc.SignUp(req.Email, req.DisplayName, req.Password, req.GymName, req.Country, req.City);
+            GenericResponse ret = _proc.SignUp(req.Email, req.Name, req.Password, req.ShopId.Value);
             return JsonConvert.SerializeObject(ret, Newtonsoft.Json.Formatting.Indented);
         }
 
-        [HttpPost]
-        public string GetGymForToken(TokenOnlyRequest req)
+        [HttpPost("getshopfortoken")]
+        public string GetShopForToken(TokenOnlyRequest req)
         {
             long accountId = _security.CheckToken(req.Token);
             if (accountId < 1)
             {
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
             }
-            GenericResponse ret = _proc.GetGymFromAccount(accountId);
+            GenericResponse ret = _proc.GetShopFromAccount(accountId);
             return JsonConvert.SerializeObject(ret, Newtonsoft.Json.Formatting.Indented);
 
         }

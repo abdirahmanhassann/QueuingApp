@@ -7,7 +7,7 @@ using static QueueingApp.Model.ApiResponses;
 using static QueueingApp.Helpers.ApiHelper;
 using static QueueingApp.Model.ApiResponses;
 //using WCL_BE.Security;
-namespace WCL_BE.Processors
+namespace QueueingApp.Processors
 {
     public class AccountProcessor
     {
@@ -57,21 +57,16 @@ namespace WCL_BE.Processors
             }
         }
 
-        public GenericResponse SignUp(string email, string displayName, string password, string gymName,
-            long countryId, long cityId)
+        public GenericResponse SignUp(string email, string name, string password, int shopId)
         {
             try
             {
-
-                // ###TODO check to make sure the email has not been used before
-                // ###TODO check to make sure Display Name and Gym Name are not in use
-                // ###TODO check for profanity in displayName or gymName
-
+                // ###TODO check for profanity in displayName or Shop
                 Encryptor enc = new(_config);
                 string salt = enc.GenerateRandomSalt();
                 string pwdEncrypted = enc.Encrypt(password, salt);
 
-                _db.Signup(email, displayName, pwdEncrypted, salt, gymName, countryId, cityId);
+                _db.Signup(email, name, pwdEncrypted, salt, shopId);
                 return CreateSuccessResponseNoData();
             }
             catch (Exception ex)
@@ -79,6 +74,20 @@ namespace WCL_BE.Processors
                 // We do not have a userId at this point, so log under account 0
                 _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
                     ex.Message + " " + ex.StackTrace, 0);
+                return CreateFailureResponse(GENERIC_ERROR);
+            }
+        }
+        public GenericResponse GetShopFromAccount(long accountId)
+        {
+            try
+            {
+                DataRow dr =  _db.GetShopFromAccount(accountId);
+                return CreateSuccessResponseWithData(dr);
+            }
+            catch (Exception ex)
+            {
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                ex.Message + " " + ex.StackTrace, accountId);
                 return CreateFailureResponse(GENERIC_ERROR);
             }
         }

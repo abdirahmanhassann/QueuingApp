@@ -9,7 +9,7 @@ namespace QueueingApp.Security
     {
 
         private string _key = "***REMOVED_ENCRYPTION_KEY***";
-        private QueueingApp.D _db;
+        private QADB _db;
 
         public Encryptor(IConfiguration config)
         {
