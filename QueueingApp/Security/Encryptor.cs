@@ -13,15 +13,15 @@ namespace QueueingApp.Security
 
         public Encryptor(IConfiguration config)
         {
-            _db = new(config.GetSection("ConnectionStrings:QUEININGAPP").Get<string>()!, false);
+            _db = new(config.GetSection("ConnectionStrings:QADB").Get<string>()!, false);
         }
 
 #pragma warning disable SYSLIB0022
 #pragma warning disable SYSLIB0041
 
-        public long CheckToken(string token)
+        public int CheckToken(string token)
         {
-            long accessToken = _db!.TokenValid(token);
+            int accessToken = _db!.TokenValid(token);
             if (accessToken != 0)
             {
                 _db.ExtendAccessToken(token);

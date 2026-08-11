@@ -11,11 +11,11 @@ namespace QueueingApp.Connectivity
             _conn = new(connectionString, keepAlive);
         }
 
-        public long TokenValid(string token)
+        public int TokenValid(string token)
         {
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputString("@Token", token, 50));
-            return _conn.ExecuteStoredProcedureAsScalarLong("account.CheckToken", sqlParams.ToArray());
+            return _conn.ExecuteStoredProcedureAsScalarInt("CheckToken", sqlParams.ToArray());
         }
 
         public void AddAccessToken(long accountId, string token)
@@ -23,14 +23,14 @@ namespace QueueingApp.Connectivity
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputLong("@AccountId", accountId));
             sqlParams.Add(_conn.GenerateInputString("@Token", token, 50));
-            _conn.ExecuteStoredProcedureNoReturn("account.AddAccessToken", sqlParams.ToArray());
+            _conn.ExecuteStoredProcedureNoReturn("AddAccessToken", sqlParams.ToArray());
         }
 
         public void ExtendAccessToken(string token)
         {
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputString("@Token", token, 50));
-            _conn.ExecuteStoredProcedureNoReturn("account.ExtendAccessToken", sqlParams.ToArray());
+            _conn.ExecuteStoredProcedureNoReturn("ExtendAccessToken", sqlParams.ToArray());
         }
 
         public void Signup(string email, string name, string password, string salt, int shopId)
@@ -50,7 +50,7 @@ namespace QueueingApp.Connectivity
             sqlParams.Add(_conn.GenerateInputString("@SourceLocation", source, 512));
             sqlParams.Add(_conn.GenerateInputString("@ErrorMessage", message, 4000));
             sqlParams.Add(_conn.GenerateInputLong("@AccountId", accountId));
-            _conn.ExecuteStoredProcedureNoReturn("logging.LogError", sqlParams.ToArray());
+            _conn.ExecuteStoredProcedureNoReturn("LogError", sqlParams.ToArray());
         }
 
         public DataRow GetAccountByEmail(string email)
@@ -65,6 +65,20 @@ namespace QueueingApp.Connectivity
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputLong("@Id", accountId));
             return _conn.ExecuteStoredProcedureAsDataRow("GetShopFromAccount", sqlParams.ToArray());
+        }
+
+        public void CreateShop(string name, int adminId, DateTime openingTime, 
+            DateTime closingTime, int? queueLimit, DateTime? lunchBreak, string qrCode)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputString("@Name", name, 50));
+            sqlParams.Add(_conn.GenerateInputInteger("@AdminId", adminId));
+            sqlParams.Add(_conn.GenerateInputDateTime("@OpeningTime", openingTime));
+            sqlParams.Add(_conn.GenerateInputDateTime("@ClosingTime", closingTime));
+            sqlParams.Add(_conn.GenerateInputInteger("@QueueLimit", queueLimit.Value));
+            sqlParams.Add(_conn.GenerateInputDateTime("@LunchBreak", lunchBreak.Value));
+            sqlParams.Add(_conn.GenerateInputString("@QrCode", qrCode, 50));
+            _conn.ExecuteStoredProcedureNoReturn("CreateShop", sqlParams.ToArray());
         }
     }
 }

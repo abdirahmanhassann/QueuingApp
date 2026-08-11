@@ -44,7 +44,7 @@ namespace QueueingApp.Processors
                 }
 
                 string token = Guid.NewGuid().ToString();
-                _db.AddAccessToken(dr.Field<long>("Id"), token);
+                _db.AddAccessToken(dr.Field<int>("Id"), token);
 
                 return CreateSuccessResponseWithData(token);
             }
@@ -83,6 +83,22 @@ namespace QueueingApp.Processors
             {
                 DataRow dr =  _db.GetShopFromAccount(accountId);
                 return CreateSuccessResponseWithData(dr);
+            }
+            catch (Exception ex)
+            {
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                ex.Message + " " + ex.StackTrace, accountId);
+                return CreateFailureResponse(GENERIC_ERROR);
+            }
+        }
+
+        public GenericResponse CreateShop(int accountId, string name, int adminId, DateTime openingTime,
+            DateTime closingTime, int? queueLimit, DateTime? lunchBreak, string qrCode)
+        {
+            try
+            {
+                 _db.CreateShop(name, adminId, openingTime, closingTime,queueLimit.Value, lunchBreak.Value, qrCode);
+                return CreateSuccessResponseNoData();
             }
             catch (Exception ex)
             {

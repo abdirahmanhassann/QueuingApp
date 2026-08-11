@@ -19,12 +19,24 @@
             public string Password { get; set; }
         }
 
-        public struct NewEmployeeAccountRequest
+        public struct NewEmployeeAccountRequest 
         {
             public string Name { get; set; }
             public string Email { get; set; }
             public string Password { get; set; }
             public int? ShopId { get; set; }
+        }
+
+        public struct NewShopRequest
+        {
+            public string Token { get; set; }
+            public string Name { get; set; }
+            public int AdminId { get; set; }
+            public DateTime OpeningTime { get; set; }
+            public DateTime ClosingTime { get; set; }
+            public int? QueueLimit { get; set; }
+            public DateTime? LunchBreak { get; set; }
+            public string QrCode { get; set; }
         }
 
     }
