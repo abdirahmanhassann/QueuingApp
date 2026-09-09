@@ -1,4 +1,3 @@
-
 namespace QueueingApp
 {
     public class Program
@@ -7,27 +6,47 @@ namespace QueueingApp
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Add services to the container.
+            foreach (var key in new[]
+            {
+                "TWILIO_ACCOUNT_SID",
+                "TWILIO_AUTH_TOKEN",
+                "TWILIO_FROM_NUMBER",
+                "TWILIO_TO_NUMBER",
+                "TWILIO_VERIFY_SERVICE_SID"
+            })
+            {
+                var value = builder.Configuration[key];
+                if (!string.IsNullOrWhiteSpace(value) &&
+                    string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key)))
+                {
+                    Environment.SetEnvironmentVariable(key, value);
+                }
+            }
 
-            builder.Services.AddControllers();
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+            builder.Services.AddControllers()
+                .AddJsonOptions(o =>
+                {
+                    o.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+                });
+            builder.Services.AddOpenApi();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
+            builder.Services.AddCors(options =>
+            {
+                options.AddDefaultPolicy(policy =>
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader());
+            });
 
             var app = builder.Build();
 
             app.UseSwagger();
             app.UseSwaggerUI();
+            app.UseCors();
             app.UseHttpsRedirection();
             app.UseAuthorization();
             app.MapControllers();
-            app.UseCors(corsPolicyBuilder =>
-            {
-                corsPolicyBuilder
-                .AllowAnyOrigin()
-                .AllowAnyMethod()
-                .AllowAnyHeader();
-            });
             app.Run();
         }
     }

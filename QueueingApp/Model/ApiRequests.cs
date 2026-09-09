@@ -1,4 +1,4 @@
-﻿namespace QueueingApp.Model
+namespace QueueingApp.Model
 {
     public class ApiRequests
     {
@@ -19,12 +19,14 @@
             public string Password { get; set; }
         }
 
-        public struct NewEmployeeAccountRequest 
+        public struct NewEmployeeAccountRequest
         {
+            public string Token { get; set; }
             public string Name { get; set; }
             public string Email { get; set; }
             public string Password { get; set; }
             public int? ShopId { get; set; }
+            public string PhoneNumber { get; set; }
         }
 
         public struct NewShopRequest
@@ -39,5 +41,31 @@
             public string QrCode { get; set; }
         }
 
+        public struct JoinCustomerRequest
+        {
+            public string Name { get; set; }
+            public string Email { get; set; }
+            public string PhoneNumber { get; set; }
+            public int ShopId { get; set; }
+        }
+
+        public struct GetQueueRequest
+        {
+            public string Token { get; set; }
+            public int Status { get; set; }
+        }
+
+        public struct QueueEntryIdRequest
+        {
+            public string Token { get; set; }
+            public int Id { get; set; }
+        }
+
+        public struct UpdateQueueStatusRequest
+        {
+            public string Token { get; set; }
+            public int Id { get; set; }
+            public int Status { get; set; }
+        }
     }
 }

@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using System.Data;
 
 namespace QueueingApp.Connectivity
@@ -41,19 +41,19 @@ namespace QueueingApp.Connectivity
         }
 
 
-        public SqlParameter GenerateInputString(string paramName, string val, int length = 2000)
+        public SqlParameter GenerateInputString(string paramName, string? val, int length = 2000)
         {
             return new SqlParameter(paramName, SqlDbType.NVarChar, length)
             {
-                Value = val
+                Value = (object?)val ?? DBNull.Value
             };
         }
 
-        public SqlParameter GenerateInputDateTime(string paramName, DateTime val)
+        public SqlParameter GenerateInputDateTime(string paramName, DateTime? val)
         {
             return new SqlParameter(paramName, SqlDbType.DateTime)
             {
-                Value = val
+                Value = (object?)val ?? DBNull.Value
             };
         }
 
@@ -189,7 +189,7 @@ namespace QueueingApp.Connectivity
             }
             else
             {
-                return table.Rows.Count == 1 ? table.Rows[0] : null!;
+                return table.Rows.Count > 0 ? table.Rows[0] : null!;
             }
         }
 

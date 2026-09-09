@@ -1,41 +1,63 @@
-﻿namespace QueueingApp.Model
+namespace QueueingApp.Model
 {
     public class Model
     {
+        public static class QueueStatuses
+        {
+            public const int Waiting = 1;
+            public const int Serving = 2;
+            public const int Served = 3;
+            public const int Cancelled = 4;
+        }
+
+        public static class UserRoles
+        {
+            public const string Customer = "Customer";
+            public const string Employee = "Employee";
+        }
+
         public class Shop
         {
+            public int Id;
             public string Name;
-            public int AdminId;
-            public DateTime OpeningTime;
-            public DateTime ClosingTime;
+            public int? AdminId;
+            public DateTime? OpeningTime;
+            public DateTime? ClosingTime;
             public int QueueLimit;
-            //##TODO: Potentially create a BreakToShop mapping table to allow shop to take multiple breaks?
-            public DateTime LunchBreak;
-            public string QrCodeId;
+            public DateTime? LunchBreak;
+            public string QrCode;
+            public int WaitingCount;
         }
 
-        public class Employee
+        public class Users
         {
             public int Id;
             public string Name;
             public string Email;
-            public int ShopId;
+            public string Password;
+            public string Salt;
+            public string PhoneNumber;
+            public int? ShopId;
+            public string Role;
             public DateTime Created;
             public bool Deleted;
-            public DateTime LastLoginDate;
+            public DateTime? LastLoginDate;
         }
 
-        public class Customer
+        public class QueueEntry
         {
             public int Id;
-            public string Name;
+            public int UserId;
             public int ShopId;
-            public bool IsWaiting;
-            public DateTime Created;
-            public DateTime ServedTime;
+            public DateTime JoinedAt;
+            public DateTime? ServedAt;
+            public int Status;
+            public string StatusName;
+            public string Name;
             public string Email;
             public string PhoneNumber;
+            public string ShopName;
+            public int? Position;
         }
-
     }
 }

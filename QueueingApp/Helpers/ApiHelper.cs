@@ -1,4 +1,4 @@
-﻿using static QueueingApp.Model.ApiResponses;
+using static QueueingApp.Model.ApiResponses;
 
 namespace QueueingApp.Helpers
 {
@@ -37,6 +37,13 @@ namespace QueueingApp.Helpers
             };
 
             return resp;
+        }
+
+        public static int GenerateNumericOtp()
+        {
+            Random random = new Random();
+            int code = random.Next(100000, 1000000);
+            return code;
         }
     }
 }
