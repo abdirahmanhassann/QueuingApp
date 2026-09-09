@@ -46,26 +46,26 @@ namespace QueueingApp.Model
             public string Name { get; set; }
             public string Email { get; set; }
             public string PhoneNumber { get; set; }
-            public int ShopId { get; set; }
+            public int? ShopId { get; set; }
         }
 
         public struct GetQueueRequest
         {
             public string Token { get; set; }
-            public int Status { get; set; }
+            public int? Status { get; set; }
         }
 
         public struct QueueEntryIdRequest
         {
             public string Token { get; set; }
-            public int Id { get; set; }
+            public int? Id { get; set; }
         }
 
         public struct UpdateQueueStatusRequest
         {
             public string Token { get; set; }
-            public int Id { get; set; }
-            public int Status { get; set; }
+            public int? Id { get; set; }
+            public int? Status { get; set; }
         }
     }
 }

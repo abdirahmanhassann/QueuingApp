@@ -27,6 +27,8 @@ namespace QueueingApp
                 .AddJsonOptions(o =>
                 {
                     o.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+                    o.JsonSerializerOptions.NumberHandling =
+                        System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString;
                 });
             builder.Services.AddOpenApi();
             builder.Services.AddEndpointsApiExplorer();

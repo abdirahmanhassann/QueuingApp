@@ -31,7 +31,7 @@ namespace QueueingApp.Controllers
         [HttpPost("joincustomer")]
         public string JoinCustomer(JoinCustomerRequest req)
         {
-            GenericResponse ret = _proc.JoinCustomer(req.Name, req.Email, req.PhoneNumber, req.ShopId);
+            GenericResponse ret = _proc.JoinCustomer(req.Name, req.Email, req.PhoneNumber, req.ShopId ?? 0);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
@@ -49,7 +49,7 @@ namespace QueueingApp.Controllers
             {
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
             }
-            GenericResponse ret = _proc.GetQueue(accountId, req.Status);
+            GenericResponse ret = _proc.GetQueue(accountId, req.Status ?? 0);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
@@ -68,7 +68,11 @@ namespace QueueingApp.Controllers
         [HttpPost("getqueueentry")]
         public string GetQueueEntry(QueueEntryIdRequest req)
         {
-            GenericResponse ret = _proc.GetQueueEntry(req.Id);
+            if (req.Id is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
+            }
+            GenericResponse ret = _proc.GetQueueEntry(id);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
@@ -80,7 +84,11 @@ namespace QueueingApp.Controllers
             {
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
             }
-            GenericResponse ret = _proc.Serve(accountId, req.Id);
+            if (req.Id is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
+            }
+            GenericResponse ret = _proc.Serve(accountId, id);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
@@ -92,7 +100,11 @@ namespace QueueingApp.Controllers
             {
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
             }
-            GenericResponse ret = _proc.Cancel(accountId, req.Id);
+            if (req.Id is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
+            }
+            GenericResponse ret = _proc.Cancel(accountId, id);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
@@ -104,7 +116,11 @@ namespace QueueingApp.Controllers
             {
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
             }
-            GenericResponse ret = _proc.UpdateQueueStatus(accountId, req.Id, req.Status);
+            if (req.Id is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
+            }
+            GenericResponse ret = _proc.UpdateQueueStatus(accountId, id, req.Status ?? 0);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
