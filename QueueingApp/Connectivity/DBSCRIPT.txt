@@ -4,98 +4,210 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
+SET XACT_ABORT ON
+GO
 
-IF OBJECT_ID(N'[dbo].[Shops]', N'U') IS NULL
+/* =============================================================================
+   QueuingApp schema aligned to QueueingApp.Connectivity.QADB
+   Safe to re-run. Migrates legacy Shop / Employee / Customer / EMP|CUS roles.
+   ============================================================================= */
+
+/* --- Token ---------------------------------------------------------------- */
+IF OBJECT_ID(N'dbo.Token', N'U') IS NULL
 BEGIN
-    CREATE TABLE [dbo].[Shops](
-        [Id] INT IDENTITY(1,1) NOT NULL,
-        [Name] NVARCHAR(200) NOT NULL,
-        [AdminId] INT NULL,
-        [OpeningTime] DATETIME2 NULL,
-        [ClosingTime] DATETIME2 NULL,
-        [QueueLimit] INT NOT NULL CONSTRAINT [DF_Shops_QueueLimit] DEFAULT (0),
-        [LunchBreak] DATETIME2 NULL,
-        [QrCode] NVARCHAR(100) NULL,
-        [Created] DATETIME2 NOT NULL CONSTRAINT [DF_Shops_Created] DEFAULT SYSUTCDATETIME(),
-        CONSTRAINT [PK_Shops] PRIMARY KEY CLUSTERED ([Id])
+    CREATE TABLE dbo.Token (
+        Id        BIGINT IDENTITY(1,1) NOT NULL,
+        AccountId BIGINT NOT NULL,
+        Token     NVARCHAR(50) NOT NULL,
+        ValidTo   DATETIME NOT NULL
     );
 END
 GO
 
-IF OBJECT_ID(N'[dbo].[Users]', N'U') IS NULL
+/* --- ErrorLog ------------------------------------------------------------- */
+IF OBJECT_ID(N'dbo.ErrorLog', N'U') IS NULL
 BEGIN
-    CREATE TABLE [dbo].[Users](
-        [Id] INT IDENTITY(1,1) NOT NULL,
-        [Name] NVARCHAR(200) NOT NULL,
-        [Email] NVARCHAR(255) NOT NULL,
-        [Password] NVARCHAR(255) NULL,
-        [Salt] NVARCHAR(50) NULL,
-        [PhoneNumber] NVARCHAR(30) NULL,
-        [ShopId] INT NULL,
-        [Role] NVARCHAR(50) NOT NULL,
-        [Created] DATETIME2 NOT NULL CONSTRAINT [DF_Users_Created] DEFAULT SYSUTCDATETIME(),
-        [Deleted] BIT NOT NULL CONSTRAINT [DF_Users_Deleted] DEFAULT (0),
-        [LastLoginDate] DATETIME2 NULL,
-        CONSTRAINT [PK_Users] PRIMARY KEY CLUSTERED ([Id]),
-        CONSTRAINT [UQ_Users_Email] UNIQUE NONCLUSTERED ([Email])
+    CREATE TABLE dbo.ErrorLog (
+        Id           BIGINT IDENTITY(1,1) NOT NULL,
+        Location     NVARCHAR(512) NOT NULL,
+        ErrorMessage NVARCHAR(4000) NOT NULL,
+        AccountId    BIGINT NOT NULL,
+        DateStamp    DATETIME NOT NULL
     );
 END
 GO
 
-IF OBJECT_ID(N'[dbo].[QueueStatus]', N'U') IS NULL
+/* --- QueueStatus (1 Waiting, 2 Serving, 3 Served, 4 Cancelled) ------------ */
+IF OBJECT_ID(N'dbo.QueueStatus', N'U') IS NULL
 BEGIN
-    CREATE TABLE [dbo].[QueueStatus](
-        [Id] INT IDENTITY(1,1) NOT NULL,
-        [Status] NVARCHAR(50) NOT NULL,
-        CONSTRAINT [PK_QueueStatus] PRIMARY KEY CLUSTERED ([Id])
+    CREATE TABLE dbo.QueueStatus (
+        Id     INT IDENTITY(1,1) NOT NULL,
+        Status NVARCHAR(50) NOT NULL,
+        CONSTRAINT PK_QueueStatus PRIMARY KEY CLUSTERED (Id)
     );
 END
 GO
 
-IF NOT EXISTS (SELECT 1 FROM dbo.QueueStatus)
+IF NOT EXISTS (SELECT 1 FROM dbo.QueueStatus WHERE Id = 1)
 BEGIN
     SET IDENTITY_INSERT dbo.QueueStatus ON;
-    INSERT INTO dbo.QueueStatus (Id, Status) VALUES (1, N'Waiting'), (2, N'Serving'), (3, N'Served'), (4, N'Cancelled');
+    IF NOT EXISTS (SELECT 1 FROM dbo.QueueStatus WHERE Id = 1) INSERT INTO dbo.QueueStatus (Id, Status) VALUES (1, N'Waiting');
+    IF NOT EXISTS (SELECT 1 FROM dbo.QueueStatus WHERE Id = 2) INSERT INTO dbo.QueueStatus (Id, Status) VALUES (2, N'Serving');
+    IF NOT EXISTS (SELECT 1 FROM dbo.QueueStatus WHERE Id = 3) INSERT INTO dbo.QueueStatus (Id, Status) VALUES (3, N'Served');
+    IF NOT EXISTS (SELECT 1 FROM dbo.QueueStatus WHERE Id = 4) INSERT INTO dbo.QueueStatus (Id, Status) VALUES (4, N'Cancelled');
     SET IDENTITY_INSERT dbo.QueueStatus OFF;
 END
 GO
 
-IF OBJECT_ID(N'[dbo].[QueueEntries]', N'U') IS NULL
+/* --- Shops (legacy table is dbo.Shop with lowercase id) ------------------- */
+IF OBJECT_ID(N'dbo.Shops', N'U') IS NULL
 BEGIN
-    CREATE TABLE [dbo].[QueueEntries](
-        [Id] INT IDENTITY(1,1) NOT NULL,
-        [UserId] INT NOT NULL,
-        [ShopId] INT NOT NULL,
-        [JoinedAt] DATETIME2 NOT NULL CONSTRAINT [DF_QueueEntries_JoinedAt] DEFAULT SYSUTCDATETIME(),
-        [ServedAt] DATETIME2 NULL,
-        [Status] INT NOT NULL CONSTRAINT [DF_QueueEntries_Status] DEFAULT (1),
-        CONSTRAINT [PK_QueueEntries] PRIMARY KEY CLUSTERED ([Id]),
-        CONSTRAINT [FK_QueueEntries_Users] FOREIGN KEY ([UserId]) REFERENCES [dbo].[Users] ([Id]),
-        CONSTRAINT [FK_QueueEntries_Shops] FOREIGN KEY ([ShopId]) REFERENCES [dbo].[Shops] ([Id]),
-        CONSTRAINT [FK_QueueEntries_Status] FOREIGN KEY ([Status]) REFERENCES [dbo].[QueueStatus] ([Id])
+    CREATE TABLE dbo.Shops (
+        Id          INT IDENTITY(1,1) NOT NULL,
+        Name        NVARCHAR(200) NOT NULL,
+        AdminId     INT NULL,
+        OpeningTime DATETIME2 NULL,
+        ClosingTime DATETIME2 NULL,
+        QueueLimit  INT NOT NULL CONSTRAINT DF_Shops_QueueLimit DEFAULT (0),
+        LunchBreak  DATETIME2 NULL,
+        QrCode      NVARCHAR(100) NULL,
+        Created     DATETIME2 NOT NULL CONSTRAINT DF_Shops_Created DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT PK_Shops PRIMARY KEY CLUSTERED (Id)
     );
 END
 GO
 
-IF OBJECT_ID(N'[dbo].[Token]', N'U') IS NULL
+IF COL_LENGTH('dbo.Shops', 'AdminId') IS NULL ALTER TABLE dbo.Shops ADD AdminId INT NULL;
+IF COL_LENGTH('dbo.Shops', 'OpeningTime') IS NULL ALTER TABLE dbo.Shops ADD OpeningTime DATETIME2 NULL;
+IF COL_LENGTH('dbo.Shops', 'ClosingTime') IS NULL ALTER TABLE dbo.Shops ADD ClosingTime DATETIME2 NULL;
+IF COL_LENGTH('dbo.Shops', 'QueueLimit') IS NULL ALTER TABLE dbo.Shops ADD QueueLimit INT NOT NULL CONSTRAINT DF_Shops_QueueLimit2 DEFAULT (0);
+IF COL_LENGTH('dbo.Shops', 'LunchBreak') IS NULL ALTER TABLE dbo.Shops ADD LunchBreak DATETIME2 NULL;
+IF COL_LENGTH('dbo.Shops', 'QrCode') IS NULL ALTER TABLE dbo.Shops ADD QrCode NVARCHAR(100) NULL;
+IF COL_LENGTH('dbo.Shops', 'Created') IS NULL ALTER TABLE dbo.Shops ADD Created DATETIME2 NOT NULL CONSTRAINT DF_Shops_Created2 DEFAULT SYSUTCDATETIME();
+GO
+
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.Shops') AND name = N'Name' AND max_length < 400
+)
+    ALTER TABLE dbo.Shops ALTER COLUMN Name NVARCHAR(200) NOT NULL;
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.Shops') AND name = N'QrCode' AND max_length < 200
+)
+    ALTER TABLE dbo.Shops ALTER COLUMN QrCode NVARCHAR(100) NULL;
+GO
+
+/* Copy legacy dbo.Shop → dbo.Shops, preserving ids that Users.ShopId points at. */
+IF OBJECT_ID(N'dbo.Shop', N'U') IS NOT NULL
 BEGIN
-    CREATE TABLE [dbo].[Token](
-        [Id] BIGINT IDENTITY(1,1) NOT NULL,
-        [AccountId] BIGINT NOT NULL,
-        [Token] NVARCHAR(50) NOT NULL,
-        [ValidTo] DATETIME NOT NULL
+    DELETE s
+    FROM dbo.Shops s
+    WHERE s.QrCode IN (N'fade-room', N'atelier-noir')
+      AND NOT EXISTS (SELECT 1 FROM dbo.Shop x WHERE x.QrCode = s.QrCode OR x.Name = s.Name)
+      AND (
+            OBJECT_ID(N'dbo.Users', N'U') IS NULL
+            OR NOT EXISTS (SELECT 1 FROM dbo.Users u WHERE u.ShopId = s.Id)
+          )
+      AND (
+            OBJECT_ID(N'dbo.QueueEntries', N'U') IS NULL
+            OR NOT EXISTS (SELECT 1 FROM dbo.QueueEntries q WHERE q.ShopId = s.Id)
+          )
+      AND (
+            OBJECT_ID(N'dbo.Employee', N'U') IS NULL
+            OR NOT EXISTS (SELECT 1 FROM dbo.Employee e WHERE e.ShopId = s.Id)
+          );
+
+    SET IDENTITY_INSERT dbo.Shops ON;
+    INSERT INTO dbo.Shops (Id, Name, AdminId, OpeningTime, ClosingTime, QueueLimit, LunchBreak, QrCode)
+    SELECT
+        x.id,
+        x.Name,
+        x.AdminId,
+        x.OpeningTime,
+        x.ClosingTime,
+        ISNULL(x.QueueLimit, 0),
+        x.LunchBreak,
+        x.QrCode
+    FROM dbo.Shop x
+    WHERE NOT EXISTS (SELECT 1 FROM dbo.Shops s WHERE s.Id = x.id);
+    SET IDENTITY_INSERT dbo.Shops OFF;
+END
+GO
+
+/* --- Users (legacy Role check is EMP/CUS; API sends Employee/Customer) ---- */
+IF OBJECT_ID(N'dbo.Users', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Users (
+        Id            INT IDENTITY(1,1) NOT NULL,
+        Name          NVARCHAR(200) NOT NULL,
+        Email         NVARCHAR(255) NOT NULL,
+        Password      NVARCHAR(255) NULL,
+        Salt          NVARCHAR(50) NULL,
+        PhoneNumber   NVARCHAR(30) NULL,
+        ShopId        INT NULL,
+        Role          NVARCHAR(50) NOT NULL,
+        Created       DATETIME2 NOT NULL CONSTRAINT DF_Users_Created DEFAULT SYSUTCDATETIME(),
+        Deleted       BIT NOT NULL CONSTRAINT DF_Users_Deleted DEFAULT (0),
+        LastLoginDate DATETIME2 NULL,
+        CONSTRAINT PK_Users PRIMARY KEY CLUSTERED (Id)
     );
 END
 GO
 
-IF OBJECT_ID(N'[dbo].[ErrorLog]', N'U') IS NULL
+IF COL_LENGTH('dbo.Users', 'PhoneNumber') IS NULL ALTER TABLE dbo.Users ADD PhoneNumber NVARCHAR(30) NULL;
+IF COL_LENGTH('dbo.Users', 'ShopId') IS NULL ALTER TABLE dbo.Users ADD ShopId INT NULL;
+IF COL_LENGTH('dbo.Users', 'Password') IS NULL ALTER TABLE dbo.Users ADD Password NVARCHAR(255) NULL;
+IF COL_LENGTH('dbo.Users', 'Salt') IS NULL ALTER TABLE dbo.Users ADD Salt NVARCHAR(50) NULL;
+IF COL_LENGTH('dbo.Users', 'Deleted') IS NULL ALTER TABLE dbo.Users ADD Deleted BIT NOT NULL CONSTRAINT DF_Users_Deleted2 DEFAULT (0);
+IF COL_LENGTH('dbo.Users', 'LastLoginDate') IS NULL ALTER TABLE dbo.Users ADD LastLoginDate DATETIME2 NULL;
+IF COL_LENGTH('dbo.Users', 'Created') IS NULL ALTER TABLE dbo.Users ADD Created DATETIME2 NOT NULL CONSTRAINT DF_Users_Created3 DEFAULT SYSUTCDATETIME();
+GO
+
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Users_Role' AND parent_object_id = OBJECT_ID(N'dbo.Users'))
+    ALTER TABLE dbo.Users DROP CONSTRAINT CK_Users_Role;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.Users') AND name = N'Name' AND max_length < 400)
+    ALTER TABLE dbo.Users ALTER COLUMN Name NVARCHAR(200) NOT NULL;
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.Users') AND name = N'Email' AND max_length < 510)
+    ALTER TABLE dbo.Users ALTER COLUMN Email NVARCHAR(255) NOT NULL;
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.Users') AND name = N'Password' AND max_length < 510)
+    ALTER TABLE dbo.Users ALTER COLUMN Password NVARCHAR(255) NULL;
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.Users') AND name = N'Salt' AND max_length < 100)
+    ALTER TABLE dbo.Users ALTER COLUMN Salt NVARCHAR(50) NULL;
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.Users') AND name = N'PhoneNumber' AND max_length < 60)
+    ALTER TABLE dbo.Users ALTER COLUMN PhoneNumber NVARCHAR(30) NULL;
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.Users') AND name = N'Role' AND max_length < 100)
+    ALTER TABLE dbo.Users ALTER COLUMN Role NVARCHAR(50) NOT NULL;
+GO
+
+UPDATE dbo.Users SET Role = N'Employee' WHERE Role IN (N'EMP', N'emp', N'employee');
+UPDATE dbo.Users SET Role = N'Customer' WHERE Role IN (N'CUS', N'cus', N'customer');
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Users_Role' AND parent_object_id = OBJECT_ID(N'dbo.Users'))
+    ALTER TABLE dbo.Users ADD CONSTRAINT CK_Users_Role CHECK (Role IN (N'Employee', N'Customer'));
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UQ_Users_Email' AND object_id = OBJECT_ID(N'dbo.Users'))
+AND NOT EXISTS (
+    SELECT Email FROM dbo.Users WHERE Email IS NOT NULL GROUP BY Email HAVING COUNT(*) > 1
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_Users_Email ON dbo.Users (Email);
+GO
+
+/* --- QueueEntries --------------------------------------------------------- */
+IF OBJECT_ID(N'dbo.QueueEntries', N'U') IS NULL
 BEGIN
-    CREATE TABLE [dbo].[ErrorLog](
-        [Id] BIGINT IDENTITY(1,1) NOT NULL,
-        [Location] NVARCHAR(512) NOT NULL,
-        [ErrorMessage] NVARCHAR(4000) NOT NULL,
-        [AccountId] BIGINT NOT NULL,
-        [DateStamp] DATETIME NOT NULL
+    CREATE TABLE dbo.QueueEntries (
+        Id       INT IDENTITY(1,1) NOT NULL,
+        UserId   INT NOT NULL,
+        ShopId   INT NOT NULL,
+        JoinedAt DATETIME2 NOT NULL CONSTRAINT DF_QueueEntries_JoinedAt DEFAULT SYSUTCDATETIME(),
+        ServedAt DATETIME2 NULL,
+        Status   INT NOT NULL CONSTRAINT DF_QueueEntries_Status DEFAULT (1),
+        CONSTRAINT PK_QueueEntries PRIMARY KEY CLUSTERED (Id)
     );
 END
 GO
@@ -103,16 +215,34 @@ GO
 IF OBJECT_ID(N'dbo.Employee', N'U') IS NOT NULL
 BEGIN
     INSERT INTO dbo.Users (Name, Email, Password, Salt, PhoneNumber, ShopId, Role, Created, Deleted, LastLoginDate)
-    SELECT e.Name, e.Email, e.Password, e.Salt, NULL, e.ShopId, N'Employee', ISNULL(e.Created, SYSUTCDATETIME()), ISNULL(e.Deleted, 0), e.LastLoginDate
+    SELECT
+        e.Name,
+        e.Email,
+        e.Password,
+        e.Salt,
+        NULL,
+        e.ShopId,
+        N'Employee',
+        ISNULL(e.Created, SYSUTCDATETIME()),
+        ISNULL(e.Deleted, 0),
+        e.LastLoginDate
     FROM dbo.Employee e
-    WHERE NOT EXISTS (SELECT 1 FROM dbo.Users u WHERE u.Email = e.Email);
+    WHERE e.Email IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM dbo.Users u WHERE u.Email = e.Email);
 END
 GO
 
 IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
 BEGIN
     INSERT INTO dbo.Users (Name, Email, PhoneNumber, ShopId, Role, Created, Deleted)
-    SELECT c.Name, c.Email, c.PhoneNumber, c.ShopId, N'Customer', ISNULL(c.Created, SYSUTCDATETIME()), 0
+    SELECT
+        c.Name,
+        c.Email,
+        c.PhoneNumber,
+        c.ShopId,
+        N'Customer',
+        ISNULL(c.Created, SYSUTCDATETIME()),
+        0
     FROM dbo.Customer c
     WHERE c.Email IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM dbo.Users u WHERE u.Email = c.Email);
@@ -120,10 +250,21 @@ END
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_QueueEntries_Shop_Status' AND object_id = OBJECT_ID(N'dbo.QueueEntries'))
+    CREATE NONCLUSTERED INDEX IX_QueueEntries_Shop_Status ON dbo.QueueEntries (ShopId, Status, JoinedAt);
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Shops)
 BEGIN
-    CREATE NONCLUSTERED INDEX [IX_QueueEntries_Shop_Status] ON dbo.QueueEntries (ShopId, Status, JoinedAt);
+    INSERT INTO dbo.Shops (Name, AdminId, OpeningTime, ClosingTime, QueueLimit, QrCode)
+    VALUES
+        (N'Fade Room', NULL, DATEADD(HOUR, 9, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), DATEADD(HOUR, 18, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), 24, N'fade-room'),
+        (N'Atelier Noir', NULL, DATEADD(HOUR, 10, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), DATEADD(HOUR, 19, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), 18, N'atelier-noir');
 END
 GO
+
+/* =============================================================================
+   Stored procedures — parameter names/types match QADB.GenerateInput*
+   ============================================================================= */
 
 CREATE OR ALTER PROCEDURE dbo.CheckToken
     @Token NVARCHAR(50)
@@ -172,29 +313,30 @@ BEGIN
 END
 GO
 
+/* QADB.Signup → CreateEmployee(@Email 255, @Name 200, @Password 255, @Salt 50, @ShopId, @PhoneNumber 30) */
 CREATE OR ALTER PROCEDURE dbo.CreateEmployee
     @Email NVARCHAR(255),
     @Name NVARCHAR(200),
     @Password NVARCHAR(255),
     @Salt NVARCHAR(50),
     @ShopId INT,
-    @PhoneNumber NVARCHAR(30) = NULL,
-    @Role NVARCHAR(50) = N'Employee'
+    @PhoneNumber NVARCHAR(30) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     INSERT INTO dbo.Users (Email, Name, Password, Salt, ShopId, PhoneNumber, Role, Created, Deleted)
-    VALUES (@Email, @Name, @Password, @Salt, @ShopId, @PhoneNumber, ISNULL(@Role, N'Employee'), SYSUTCDATETIME(), 0);
-    SELECT SCOPE_IDENTITY() AS Id;
+    VALUES (@Email, @Name, @Password, @Salt, @ShopId, @PhoneNumber, N'Employee', SYSUTCDATETIME(), 0);
+    SELECT CAST(SCOPE_IDENTITY() AS INT) AS Id;
 END
 GO
 
+/* QADB.GetAccountByEmail → GetEmployeeByEmail(@Email 255). Login reads Id, Salt, Password. */
 CREATE OR ALTER PROCEDURE dbo.GetEmployeeByEmail
     @Email NVARCHAR(255)
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT TOP 1 *
+    SELECT TOP 1 Id, Name, Email, Password, Salt, PhoneNumber, ShopId, Role, Created, Deleted, LastLoginDate
     FROM dbo.Users
     WHERE Email = @Email
       AND Role = N'Employee'
@@ -202,6 +344,7 @@ BEGIN
 END
 GO
 
+/* QADB.GetUserById(@Id int) — no password/salt */
 CREATE OR ALTER PROCEDURE dbo.GetUserById
     @Id INT
 AS
@@ -213,6 +356,7 @@ BEGIN
 END
 GO
 
+/* QADB.TouchLastLogin(@Id int) */
 CREATE OR ALTER PROCEDURE dbo.UsersTouchLastLogin
     @Id INT
 AS
@@ -222,19 +366,30 @@ BEGIN
 END
 GO
 
+/* QADB.GetShopFromAccount(@Id bigint) */
 CREATE OR ALTER PROCEDURE dbo.GetShopFromAccount
     @Id BIGINT
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT s.*,
-           (SELECT COUNT(*) FROM dbo.QueueEntries q WHERE q.ShopId = s.Id AND q.Status = 1) AS WaitingCount
+    SELECT
+        s.Id,
+        s.Name,
+        s.AdminId,
+        s.OpeningTime,
+        s.ClosingTime,
+        s.QueueLimit,
+        s.LunchBreak,
+        s.QrCode,
+        s.Created,
+        (SELECT COUNT(*) FROM dbo.QueueEntries q WHERE q.ShopId = s.Id AND q.Status = 1) AS WaitingCount
     FROM dbo.Shops s
     INNER JOIN dbo.Users u ON u.ShopId = s.Id
     WHERE u.Id = @Id;
 END
 GO
 
+/* QADB.CreateShop(@Name 200, @AdminId, @OpeningTime, @ClosingTime, @QueueLimit, @LunchBreak, @QrCode 100) */
 CREATE OR ALTER PROCEDURE dbo.CreateShop
     @Name NVARCHAR(200),
     @AdminId INT,
@@ -248,7 +403,7 @@ BEGIN
     SET NOCOUNT ON;
     INSERT INTO dbo.Shops (Name, AdminId, OpeningTime, ClosingTime, QueueLimit, LunchBreak, QrCode)
     VALUES (@Name, @AdminId, @OpeningTime, @ClosingTime, ISNULL(@QueueLimit, 0), @LunchBreak, @QrCode);
-    SELECT SCOPE_IDENTITY() AS Id;
+    SELECT CAST(SCOPE_IDENTITY() AS INT) AS Id;
 END
 GO
 
@@ -256,8 +411,17 @@ CREATE OR ALTER PROCEDURE dbo.ShopsGet
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT s.*,
-           (SELECT COUNT(*) FROM dbo.QueueEntries q WHERE q.ShopId = s.Id AND q.Status = 1) AS WaitingCount
+    SELECT
+        s.Id,
+        s.Name,
+        s.AdminId,
+        s.OpeningTime,
+        s.ClosingTime,
+        s.QueueLimit,
+        s.LunchBreak,
+        s.QrCode,
+        s.Created,
+        (SELECT COUNT(*) FROM dbo.QueueEntries q WHERE q.ShopId = s.Id AND q.Status = 1) AS WaitingCount
     FROM dbo.Shops s
     ORDER BY s.Name;
 END
@@ -275,6 +439,8 @@ BEGIN
 END
 GO
 
+/* QADB.CreateCustomerJoinQueue(@Name 200, @Email 255, @PhoneNumber 30, @ShopId)
+   Returns UserId, QueueEntryId, CreatedUser, AlreadyWaiting */
 CREATE OR ALTER PROCEDURE dbo.CreateCustomerJoinQueue
     @Name NVARCHAR(200),
     @Email NVARCHAR(255),
@@ -379,6 +545,7 @@ BEGIN
 END
 GO
 
+/* QADB.QueueEntriesGet(@ShopId, @Status) — @Status 0 = waiting+serving */
 CREATE OR ALTER PROCEDURE dbo.QueueEntriesGet
     @ShopId INT,
     @Status INT = 0
@@ -414,7 +581,7 @@ BEGIN
         qs.Status AS StatusName,
         u.Name, u.Email, u.PhoneNumber,
         s.Name AS ShopName,
-        NULL AS Position
+        CAST(NULL AS INT) AS Position
     FROM dbo.QueueEntries q
     INNER JOIN dbo.Users u ON u.Id = q.UserId
     INNER JOIN dbo.Shops s ON s.Id = q.ShopId
@@ -473,14 +640,5 @@ BEGIN
     WHERE Id = @Id;
 
     EXEC dbo.QueueEntriesGetById @Id = @Id;
-END
-GO
-
-IF NOT EXISTS (SELECT 1 FROM dbo.Shops)
-BEGIN
-    INSERT INTO dbo.Shops (Name, AdminId, OpeningTime, ClosingTime, QueueLimit, QrCode)
-    VALUES
-        (N'Fade Room', NULL, DATEADD(HOUR, 9, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), DATEADD(HOUR, 18, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), 24, N'fade-room'),
-        (N'Atelier Noir', NULL, DATEADD(HOUR, 10, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), DATEADD(HOUR, 19, CAST(CAST(GETUTCDATE() AS DATE) AS DATETIME2)), 18, N'atelier-noir');
 END
 GO
