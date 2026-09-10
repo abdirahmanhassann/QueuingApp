@@ -22,6 +22,12 @@ namespace QueueingApp.Processors
         {
             try
             {
+                email = (email ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+                {
+                    return CreateFailureResponse("Email and password are required.");
+                }
+
                 DataRow dr = _db.GetAccountByEmail(email);
                 if (dr == null)
                 {

@@ -15,8 +15,8 @@ namespace QueueingApp.Model
 
         public struct LoginRequest
         {
-            public string Email { get; set; }
-            public string Password { get; set; }
+            public string? Email { get; set; }
+            public string? Password { get; set; }
         }
 
         public struct NewEmployeeAccountRequest
