@@ -46,7 +46,10 @@ namespace QueueingApp
             app.UseSwagger();
             app.UseSwaggerUI();
             app.UseCors();
-            app.UseHttpsRedirection();
+            if (!app.Environment.IsDevelopment())
+            {
+                app.UseHttpsRedirection();
+            }
             app.UseAuthorization();
             app.MapControllers();
             app.Run();
