@@ -28,10 +28,17 @@ namespace QueueingApp.Controllers
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
+        // Staff only: the caller's token decides which shop(s) they may add people to.
+        // With no token, this works exactly once — to create the very first employee on an empty system.
         [HttpPost("signup")]
         public string Signup(NewEmployeeAccountRequest req)
         {
-            GenericResponse ret = _proc.SignUp(req.Email, req.Name, req.Password, req.ShopId ?? 0, req.PhoneNumber);
+            int accountId = string.IsNullOrWhiteSpace(req.Token) ? 0 : _security.CheckToken(req.Token);
+            if (!string.IsNullOrWhiteSpace(req.Token) && accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.SignUp(accountId, req.Email, req.Name, req.Password, req.ShopId, req.PhoneNumber);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
@@ -67,7 +74,108 @@ namespace QueueingApp.Controllers
             {
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
             }
-            GenericResponse ret = _proc.CreateShop(accountId, req.Name, req.AdminId, req.OpeningTime, req.ClosingTime, req.QueueLimit, req.LunchBreak, req.QrCode);
+            GenericResponse ret = _proc.CreateShop(accountId, req.Name, req.AdminId, req.OpeningTime, req.ClosingTime, req.QueueLimit, req.LunchBreak, req.QrCode,
+                req.Address, req.Postcode, req.Latitude, req.Longitude, req.JoinRadiusMetres);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("updateshoplocation")]
+        public string UpdateShopLocation(UpdateShopLocationRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.UpdateShopLocation(accountId, req.Address, req.Postcode, req.Latitude, req.Longitude, req.JoinRadiusMetres);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("updatequeuesettings")]
+        public string UpdateQueueSettings(QueueSettingsRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.UpdateQueueSettings(accountId, req.QueueLimit, req.EtaMode, req.MinutesPerCustomer);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("startbreak")]
+        public string StartBreak(BreakRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            if (req.Minutes is not int minutes || minutes < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Choose how long the break is." });
+            }
+            GenericResponse ret = _proc.SetBreak(accountId, minutes, req.PauseJoins ?? false);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("endbreak")]
+        public string EndBreak(TokenOnlyRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.SetBreak(accountId, 0, false);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("getbilling")]
+        public string GetBilling(TokenOnlyRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.GetBilling(accountId);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("createcheckout")]
+        public string CreateCheckout(CheckoutRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.CreateCheckout(accountId, req.Plan, req.Interval, req.ReturnUrl);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("billingportal")]
+        public string BillingPortal(BillingPortalRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.CreateBillingPortal(accountId, req.ReturnUrl);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("regenerateqrcode")]
+        public string RegenerateQrCode(TokenOnlyRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            GenericResponse ret = _proc.RegenerateQrCode(accountId);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
     }

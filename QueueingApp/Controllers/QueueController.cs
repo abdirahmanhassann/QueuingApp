@@ -28,17 +28,44 @@ namespace QueueingApp.Controllers
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
-        [HttpPost("joincustomer")]
-        public string JoinCustomer(JoinCustomerRequest req)
+        // Customer join flow: scan shop QR -> getshopbycode -> requestjoin (location check + SMS code) -> verifyjoin.
+        // The old open joincustomer/createcustomer endpoints are gone on purpose: they let anyone join from anywhere.
+
+        [HttpPost("getshopbycode")]
+        public string GetShopByCode(QrCodeRequest req)
         {
-            GenericResponse ret = _proc.JoinCustomer(req.Name, req.Email, req.PhoneNumber, req.ShopId ?? 0);
+            GenericResponse ret = _proc.GetShopByCode(req.QrCode);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
-        [HttpPost("createcustomer")]
-        public string CreateCustomer(JoinCustomerRequest req)
+        [HttpPost("requestjoin")]
+        public string RequestJoin(RequestJoinRequest req)
         {
-            return JoinCustomer(req);
+            GenericResponse ret = _proc.RequestJoin(req.QrCode, req.Name, req.Email, req.PhoneNumber,
+                req.Latitude, req.Longitude, req.Accuracy);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("verifyjoin")]
+        public string VerifyJoin(VerifyJoinRequest req)
+        {
+            if (req.PendingJoinId is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "That request has expired. Start again." });
+            }
+            GenericResponse ret = _proc.VerifyJoin(id, req.Code);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        [HttpPost("resendjoincode")]
+        public string ResendJoinCode(PendingJoinIdRequest req)
+        {
+            if (req.PendingJoinId is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "That request has expired. Start again." });
+            }
+            GenericResponse ret = _proc.ResendJoinCode(id);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
         [HttpPost("getqueue")]
@@ -72,7 +99,7 @@ namespace QueueingApp.Controllers
             {
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
             }
-            GenericResponse ret = _proc.GetQueueEntry(id);
+            GenericResponse ret = _proc.GetQueueEntry(id, req.AccessKey);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
@@ -105,6 +132,44 @@ namespace QueueingApp.Controllers
                 return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
             }
             GenericResponse ret = _proc.Cancel(accountId, id);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        // Staff: move a waiting customer to another place in the line (1 = next).
+        [HttpPost("movequeueentry")]
+        public string MoveQueueEntry(MoveQueueEntryRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            if (req.Id is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
+            }
+            if (req.Position is not int position || position < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Choose a place in the line." });
+            }
+            GenericResponse ret = _proc.MoveInQueue(accountId, id, position);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        // Staff: text a waiting/serving customer. The message also shows on their ticket page.
+        [HttpPost("pingcustomer")]
+        public string PingCustomer(PingCustomerRequest req)
+        {
+            int accountId = _security.CheckToken(req.Token);
+            if (accountId < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = TOKEN_ERROR });
+            }
+            if (req.Id is not int id || id < 1)
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false, ErrorMessage = "Queue entry not found." });
+            }
+            GenericResponse ret = _proc.PingCustomer(accountId, id, req.Message);
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 

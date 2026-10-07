@@ -41,9 +41,8 @@ namespace QueueingApp.Helpers
 
         public static int GenerateNumericOtp()
         {
-            Random random = new Random();
-            int code = random.Next(100000, 1000000);
-            return code;
+            // Cryptographic RNG: System.Random codes are predictable.
+            return System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 1000000);
         }
     }
 }

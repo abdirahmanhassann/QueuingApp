@@ -23,7 +23,10 @@ namespace QueueingApp
                 }
             }
 
-            builder.Services.AddControllers()
+            // <Nullable>enable</Nullable> makes [ApiController] treat every non-nullable string on a request model as
+            // [Required] and reject the call with a 400 before our code runs ("The Token field is required.").
+            // The controllers/processors validate their own inputs and return GenericResponse errors, so switch that off.
+            builder.Services.AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
                 .AddJsonOptions(o =>
                 {
                     o.JsonSerializerOptions.PropertyNameCaseInsensitive = true;

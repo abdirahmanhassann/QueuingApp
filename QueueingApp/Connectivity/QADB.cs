@@ -112,7 +112,9 @@ namespace QueueingApp.Connectivity
         }
 
         public void CreateShop(string name, int adminId, DateTime openingTime,
-            DateTime closingTime, int? queueLimit, DateTime? lunchBreak, string qrCode)
+            DateTime closingTime, int? queueLimit, DateTime? lunchBreak, string? qrCode,
+            string? address = null, string? postcode = null, decimal? latitude = null, decimal? longitude = null,
+            int? joinRadiusMetres = null)
         {
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputString("@Name", name, 200));
@@ -122,12 +124,108 @@ namespace QueueingApp.Connectivity
             sqlParams.Add(_conn.GenerateInputInteger("@QueueLimit", queueLimit ?? 0));
             sqlParams.Add(_conn.GenerateInputDateTime("@LunchBreak", lunchBreak));
             sqlParams.Add(_conn.GenerateInputString("@QrCode", qrCode, 100));
+            sqlParams.Add(_conn.GenerateInputString("@Address", address, 300));
+            sqlParams.Add(_conn.GenerateInputString("@Postcode", postcode, 10));
+            if (latitude.HasValue && longitude.HasValue)
+            {
+                sqlParams.Add(_conn.GenerateInputDecimal("@Latitude", latitude.Value));
+                sqlParams.Add(_conn.GenerateInputDecimal("@Longitude", longitude.Value));
+            }
+            if (joinRadiusMetres.HasValue)
+            {
+                sqlParams.Add(_conn.GenerateInputInteger("@JoinRadiusMetres", joinRadiusMetres.Value));
+            }
             _conn.ExecuteStoredProcedureNoReturn("CreateShop", sqlParams.ToArray());
+        }
+
+        public int EmployeesCountAll()
+        {
+            return _conn.ExecuteStoredProcedureAsScalarInt("EmployeesCountAll", null);
+        }
+
+        public DataRow ShopsGetById(int id)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            return _conn.ExecuteStoredProcedureAsDataRow("ShopsGetById", sqlParams.ToArray());
         }
 
         public DataTable ShopsGet()
         {
             return _conn.ExecuteStoredProcedureAsDataTable("ShopsGet", null);
+        }
+
+        public DataRow ShopsGetByQrCode(string qrCode)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputString("@QrCode", qrCode, 100));
+            return _conn.ExecuteStoredProcedureAsDataRow("ShopsGetByQrCode", sqlParams.ToArray());
+        }
+
+        public DataRow ShopsUpdateLocation(int shopId, string? address, string? postcode, decimal latitude,
+            decimal longitude, int? joinRadiusMetres)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputString("@Address", address, 300));
+            sqlParams.Add(_conn.GenerateInputString("@Postcode", postcode, 10));
+            sqlParams.Add(_conn.GenerateInputDecimal("@Latitude", latitude));
+            sqlParams.Add(_conn.GenerateInputDecimal("@Longitude", longitude));
+            if (joinRadiusMetres.HasValue)
+            {
+                sqlParams.Add(_conn.GenerateInputInteger("@JoinRadiusMetres", joinRadiusMetres.Value));
+            }
+            return _conn.ExecuteStoredProcedureAsDataRow("ShopsUpdateLocation", sqlParams.ToArray());
+        }
+
+        public DataRow ShopsRegenerateQrCode(int shopId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            return _conn.ExecuteStoredProcedureAsDataRow("ShopsRegenerateQrCode", sqlParams.ToArray());
+        }
+
+        public DataRow PendingJoinsCreate(int shopId, string name, string email, string phoneNumber, string otpHash, string otpSalt)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputString("@Name", name, 100));
+            sqlParams.Add(_conn.GenerateInputString("@Email", email, 255));
+            sqlParams.Add(_conn.GenerateInputString("@PhoneNumber", phoneNumber, 20));
+            sqlParams.Add(_conn.GenerateInputString("@OtpHash", otpHash, 255));
+            sqlParams.Add(_conn.GenerateInputString("@OtpSalt", otpSalt, 255));
+            return _conn.ExecuteStoredProcedureAsDataRow("PendingJoinsCreate", sqlParams.ToArray());
+        }
+
+        public DataRow PendingJoinsGetById(int id)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            return _conn.ExecuteStoredProcedureAsDataRow("PendingJoinsGetById", sqlParams.ToArray());
+        }
+
+        public int PendingJoinsRecordAttempt(int id)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            return _conn.ExecuteStoredProcedureAsScalarInt("PendingJoinsRecordAttempt", sqlParams.ToArray());
+        }
+
+        public DataRow PendingJoinsResend(int id, string otpHash, string otpSalt)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            sqlParams.Add(_conn.GenerateInputString("@OtpHash", otpHash, 255));
+            sqlParams.Add(_conn.GenerateInputString("@OtpSalt", otpSalt, 255));
+            return _conn.ExecuteStoredProcedureAsDataRow("PendingJoinsResend", sqlParams.ToArray());
+        }
+
+        public void PendingJoinsComplete(int id, int queueEntryId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            sqlParams.Add(_conn.GenerateInputInteger("@QueueEntryId", queueEntryId));
+            _conn.ExecuteStoredProcedureNoReturn("PendingJoinsComplete", sqlParams.ToArray());
         }
 
         public DataTable EmployeesGet(int shopId)
@@ -167,6 +265,107 @@ namespace QueueingApp.Connectivity
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
             return _conn.ExecuteStoredProcedureAsDataRow("QueueEntriesGetById", sqlParams.ToArray());
+        }
+
+        /// <summary>1 if a text may be sent (and it's counted), 0 if this month's allowance is used up. limit &lt; 0 = unlimited.</summary>
+        public int ShopSmsTryConsume(int shopId, int limit)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputInteger("@Limit", limit));
+            return _conn.ExecuteStoredProcedureAsScalarInt("ShopSmsTryConsume", sqlParams.ToArray());
+        }
+
+        public int ShopSmsUsageGet(int shopId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            return _conn.ExecuteStoredProcedureAsScalarInt("ShopSmsUsageGet", sqlParams.ToArray());
+        }
+
+        public void ShopsSetStripeCustomer(int shopId, string stripeCustomerId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputString("@StripeCustomerId", stripeCustomerId, 64));
+            _conn.ExecuteStoredProcedureNoReturn("ShopsSetStripeCustomer", sqlParams.ToArray());
+        }
+
+        public DataRow ShopsGetByStripeCustomer(string stripeCustomerId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputString("@StripeCustomerId", stripeCustomerId, 64));
+            return _conn.ExecuteStoredProcedureAsDataRow("ShopsGetByStripeCustomer", sqlParams.ToArray());
+        }
+
+        public void ShopsUpdateSubscription(int shopId, string stripeCustomerId, string stripeSubscriptionId, string plan,
+            string status, string? interval, DateTime? currentPeriodEnd, bool cancelAtPeriodEnd)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputString("@StripeCustomerId", stripeCustomerId, 64));
+            sqlParams.Add(_conn.GenerateInputString("@StripeSubscriptionId", stripeSubscriptionId, 64));
+            sqlParams.Add(_conn.GenerateInputString("@Plan", plan, 10));
+            sqlParams.Add(_conn.GenerateInputString("@SubscriptionStatus", status, 20));
+            sqlParams.Add(_conn.GenerateInputString("@BillingInterval", interval, 10));
+            sqlParams.Add(_conn.GenerateInputDateTime("@CurrentPeriodEnd", currentPeriodEnd));
+            sqlParams.Add(_conn.GenerateInputBool("@CancelAtPeriodEnd", cancelAtPeriodEnd));
+            _conn.ExecuteStoredProcedureNoReturn("ShopsUpdateSubscription", sqlParams.ToArray());
+        }
+
+        /// <summary>1 the first time a Stripe event id is seen, 0 for repeats.</summary>
+        public int BillingEventsTryRecord(string eventId, string type, int? shopId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputString("@EventId", eventId, 100));
+            sqlParams.Add(_conn.GenerateInputString("@Type", type, 100));
+            if (shopId.HasValue)
+            {
+                sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId.Value));
+            }
+            return _conn.ExecuteStoredProcedureAsScalarInt("BillingEventsTryRecord", sqlParams.ToArray());
+        }
+
+        public DataTable QueueServiceDurations(int shopId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            return _conn.ExecuteStoredProcedureAsDataTable("QueueServiceDurations", sqlParams.ToArray());
+        }
+
+        public DataRow ShopsUpdateQueueSettings(int shopId, int queueLimit, string etaMode, int minutesPerCustomer)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputInteger("@QueueLimit", queueLimit));
+            sqlParams.Add(_conn.GenerateInputString("@EtaMode", etaMode, 10));
+            sqlParams.Add(_conn.GenerateInputInteger("@MinutesPerCustomer", minutesPerCustomer));
+            return _conn.ExecuteStoredProcedureAsDataRow("ShopsUpdateQueueSettings", sqlParams.ToArray());
+        }
+
+        public DataRow ShopsSetBreak(int shopId, int minutes, bool pauseJoins)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputInteger("@Minutes", minutes));
+            sqlParams.Add(_conn.GenerateInputBool("@PauseJoins", pauseJoins));
+            return _conn.ExecuteStoredProcedureAsDataRow("ShopsSetBreak", sqlParams.ToArray());
+        }
+
+        public DataRow QueueEntriesMove(int id, int newPosition)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            sqlParams.Add(_conn.GenerateInputInteger("@NewPosition", newPosition));
+            return _conn.ExecuteStoredProcedureAsDataRow("QueueEntriesMove", sqlParams.ToArray());
+        }
+
+        public DataRow QueueEntriesRecordPing(int id, string message)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            sqlParams.Add(_conn.GenerateInputString("@Message", message, 300));
+            return _conn.ExecuteStoredProcedureAsDataRow("QueueEntriesRecordPing", sqlParams.ToArray());
         }
 
         public DataRow QueueEntriesUpdateStatus(int id, int status)

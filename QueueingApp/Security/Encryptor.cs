@@ -19,8 +19,12 @@ namespace QueueingApp.Security
 #pragma warning disable SYSLIB0022
 #pragma warning disable SYSLIB0041
 
-        public int CheckToken(string token)
+        public int CheckToken(string? token)
         {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return 0;
+            }
             int accessToken = _db!.TokenValid(token);
             if (accessToken != 0)
             {
