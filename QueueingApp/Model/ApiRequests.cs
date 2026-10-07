@@ -29,6 +29,18 @@ namespace QueueingApp.Model
             public string PhoneNumber { get; set; }
         }
 
+        /// <summary>Public business sign-up: a new shop plus its owner's staff login.</summary>
+        public struct RegisterShopRequest
+        {
+            public string? Name { get; set; }
+            public string? Email { get; set; }
+            public string? Password { get; set; }
+            public string? PhoneNumber { get; set; }
+            public string? ShopName { get; set; }
+            public string? Address { get; set; }
+            public string? Postcode { get; set; }
+        }
+
         public struct NewShopRequest
         {
             public string Token { get; set; }

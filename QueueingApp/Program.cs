@@ -1,3 +1,5 @@
+using QueueingApp.Helpers;
+
 namespace QueueingApp
 {
     public class Program
@@ -5,6 +7,12 @@ namespace QueueingApp
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            // Private settings for this computer only. Git ignores this file.
+            builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+            // Stripe keys and price ids from the database (dbo.AppSettings / dbo.PlanPrices). Added last so the
+            // database wins; re-read every 30 seconds, so SQL changes apply without a restart.
+            builder.Configuration.AddDbSettings(builder.Configuration.GetConnectionString("QADB"));
 
             foreach (var key in new[]
             {

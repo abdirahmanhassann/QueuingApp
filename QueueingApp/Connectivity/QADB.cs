@@ -74,6 +74,27 @@ namespace QueueingApp.Connectivity
             _conn.ExecuteStoredProcedureNoReturn("CreateEmployee", sqlParams.ToArray());
         }
 
+        /// <summary>New shop + its owner's staff login in one go. Returns UserId and ShopId.</summary>
+        public DataRow RegisterShop(string ownerName, string email, string password, string salt, string? phoneNumber,
+            string shopName, string? address, string? postcode, decimal? latitude, decimal? longitude)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputString("@OwnerName", ownerName, 200));
+            sqlParams.Add(_conn.GenerateInputString("@Email", email, 255));
+            sqlParams.Add(_conn.GenerateInputString("@Password", password, 255));
+            sqlParams.Add(_conn.GenerateInputString("@Salt", salt, 50));
+            sqlParams.Add(_conn.GenerateInputString("@PhoneNumber", phoneNumber, 30));
+            sqlParams.Add(_conn.GenerateInputString("@ShopName", shopName, 200));
+            sqlParams.Add(_conn.GenerateInputString("@Address", address, 300));
+            sqlParams.Add(_conn.GenerateInputString("@Postcode", postcode, 10));
+            if (latitude.HasValue && longitude.HasValue)
+            {
+                sqlParams.Add(_conn.GenerateInputDecimal("@Latitude", latitude.Value));
+                sqlParams.Add(_conn.GenerateInputDecimal("@Longitude", longitude.Value));
+            }
+            return _conn.ExecuteStoredProcedureAsDataRow("RegisterShop", sqlParams.ToArray());
+        }
+
         public void LogError(string source, string message, long accountId)
         {
             List<SqlParameter> sqlParams = new();
@@ -211,6 +232,15 @@ namespace QueueingApp.Connectivity
             return _conn.ExecuteStoredProcedureAsScalarInt("PendingJoinsRecordAttempt", sqlParams.ToArray());
         }
 
+        /// <summary>Counts one code guess before it's checked. Returns attempts used, or -1 if none are left.</summary>
+        public int PendingJoinsTakeAttempt(int id, int maxAttempts)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
+            sqlParams.Add(_conn.GenerateInputInteger("@MaxAttempts", maxAttempts));
+            return _conn.ExecuteStoredProcedureAsScalarInt("PendingJoinsTakeAttempt", sqlParams.ToArray());
+        }
+
         public DataRow PendingJoinsResend(int id, string otpHash, string otpSalt)
         {
             List<SqlParameter> sqlParams = new();
@@ -235,13 +265,15 @@ namespace QueueingApp.Connectivity
             return _conn.ExecuteStoredProcedureAsDataTable("EmployeesGet", sqlParams.ToArray());
         }
 
-        public DataRow CreateCustomerJoinQueue(string name, string email, string phoneNumber, int shopId)
+        /// <summary>waitingCap: the plan's cap on waiting customers (0 = none), enforced inside the join transaction.</summary>
+        public DataRow CreateCustomerJoinQueue(string name, string email, string phoneNumber, int shopId, int waitingCap = 0)
         {
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputString("@Name", name, 200));
             sqlParams.Add(_conn.GenerateInputString("@Email", email, 255));
             sqlParams.Add(_conn.GenerateInputString("@PhoneNumber", phoneNumber, 30));
             sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            sqlParams.Add(_conn.GenerateInputInteger("@WaitingCap", waitingCap));
             return _conn.ExecuteStoredProcedureAsDataRow("CreateCustomerJoinQueue", sqlParams.ToArray());
         }
 
@@ -265,6 +297,27 @@ namespace QueueingApp.Connectivity
             List<SqlParameter> sqlParams = new();
             sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
             return _conn.ExecuteStoredProcedureAsDataRow("QueueEntriesGetById", sqlParams.ToArray());
+        }
+
+        /// <summary>dbo.AppSettings.SmsLive: true = send real texts, false = demo mode.</summary>
+        /// <summary>One row: SecretKey, WebhookSecret, LimitedMonthly, LimitedYearly, FullMonthly, FullYearly.</summary>
+        public DataRow StripeSettingsGet()
+        {
+            return _conn.ExecuteStoredProcedureAsDataRow("StripeSettingsGet", null);
+        }
+
+        public bool AppSettingsGetSmsLive()
+        {
+            DataRow row = _conn.ExecuteStoredProcedureAsDataRow("AppSettingsGet", null);
+            return row != null && row["SmsLive"] != DBNull.Value && Convert.ToBoolean(row["SmsLive"]);
+        }
+
+        /// <summary>Gives back one text from this month's count (the text was counted but Twilio didn't send it).</summary>
+        public void ShopSmsRelease(int shopId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            _conn.ExecuteStoredProcedureNoReturn("ShopSmsRelease", sqlParams.ToArray());
         }
 
         /// <summary>1 if a text may be sent (and it's counted), 0 if this month's allowance is used up. limit &lt; 0 = unlimited.</summary>
@@ -358,6 +411,14 @@ namespace QueueingApp.Connectivity
             sqlParams.Add(_conn.GenerateInputInteger("@Id", id));
             sqlParams.Add(_conn.GenerateInputInteger("@NewPosition", newPosition));
             return _conn.ExecuteStoredProcedureAsDataRow("QueueEntriesMove", sqlParams.ToArray());
+        }
+
+        /// <summary>The first waiting customer, if they haven't had their "you're next" text yet (null otherwise).</summary>
+        public DataRow QueueEntriesClaimNextNotify(int shopId)
+        {
+            List<SqlParameter> sqlParams = new();
+            sqlParams.Add(_conn.GenerateInputInteger("@ShopId", shopId));
+            return _conn.ExecuteStoredProcedureAsDataRow("QueueEntriesClaimNextNotify", sqlParams.ToArray());
         }
 
         public DataRow QueueEntriesRecordPing(int id, string message)

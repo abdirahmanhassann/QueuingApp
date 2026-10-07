@@ -3,15 +3,20 @@ using System.Data;
 namespace QueueingApp.Helpers
 {
     /// <summary>
-    /// Free / Limited / Full plans. Limits default to the values below and can be overridden in appsettings
-    /// ("Plans": { "Free": { "MaxStaff": 1, ... } }). Mirrored in the frontend's src/lib/plans.ts for demo mode.
+    /// Two paid plans, Limited and Full, after a 14-day Full trial. There's no free plan: a shop with no live
+    /// subscription and no trial left is NONE (expired) — customers can't join and no texts go out until it
+    /// subscribes, though staff can still finish the people already in the queue.
+    /// Paid limits default to the values below and can be overridden in appsettings
+    /// ("Plans": { "Limited": { "MaxStaff": 3, ... } }). Mirrored in the frontend's src/lib/plans.ts for demo mode.
     /// </summary>
     public static class Plans
     {
-        public const string FREE = "Free";
+        /// <summary>No plan in force (Shops.Plan = 'None' means nothing paid for).</summary>
+        public const string NONE = "None";
         public const string LIMITED = "Limited";
         public const string FULL = "Full";
-        public static readonly string[] ALL = { FREE, LIMITED, FULL };
+        /// <summary>The plans on offer.</summary>
+        public static readonly string[] ALL = { LIMITED, FULL };
 
         /// <summary>Days a past_due subscription keeps its plan while Stripe retries the card.</summary>
         public const int GRACE_DAYS = 7;
@@ -27,18 +32,26 @@ namespace QueueingApp.Helpers
             public bool CanTextCustomers { get; init; }
             public bool CanReorderQueue { get; init; }
             public bool CanUseLearnedEta { get; init; }
+            /// <summary>False when no plan is in force: no new customers, no texts.</summary>
+            public bool Active { get; init; } = true;
         }
 
         private static readonly Dictionary<string, Limits> DEFAULTS = new()
         {
-            [FREE] = new Limits { MaxStaff = 1, MaxWaiting = 10, SmsPerMonth = 100 },
             [LIMITED] = new Limits { MaxStaff = 3, MaxWaiting = 30, SmsPerMonth = 500, CanTextCustomers = true, CanReorderQueue = true },
             [FULL] = new Limits { MaxStaff = null, MaxWaiting = null, SmsPerMonth = 2000, CanTextCustomers = true, CanReorderQueue = true, CanUseLearnedEta = true },
         };
 
+        /// <summary>Expired: staff can still sign in and clear the queue, nothing else.</summary>
+        private static readonly Limits NONE_LIMITS = new() { MaxStaff = 1, MaxWaiting = null, SmsPerMonth = 0, Active = false };
+
         public static Limits For(IConfiguration config, string plan)
         {
             string key = Normalise(plan);
+            if (key == NONE)
+            {
+                return NONE_LIMITS;
+            }
             Limits d = DEFAULTS[key];
             IConfigurationSection s = config.GetSection("Plans:" + key);
             if (!s.Exists())
@@ -76,15 +89,16 @@ namespace QueueingApp.Helpers
                     return p;
                 }
             }
-            return FREE;
+            return NONE;
         }
 
         public sealed class Effective
         {
-            /// <summary>The plan whose limits apply right now.</summary>
-            public string Plan { get; init; } = FREE;
-            /// <summary>"Subscription", "Grace" (payment failing), "Trial" or "Free".</summary>
-            public string Source { get; init; } = "Free";
+            /// <summary>The plan whose limits apply right now (NONE once the trial and any subscription have ended).</summary>
+            public string Plan { get; init; } = NONE;
+            /// <summary>"Subscription", "Grace" (payment failing), "Trial" or "Expired".</summary>
+            public string Source { get; init; } = "Expired";
+            public bool IsActive => Plan != NONE;
             public DateTime? TrialEndsAt { get; init; }
         }
 
@@ -96,11 +110,11 @@ namespace QueueingApp.Helpers
             DateTime? periodEnd = Eta.AsUtc(Col(shop, "CurrentPeriodEnd"));
             DateTime? trialEnds = Eta.AsUtc(Col(shop, "TrialEndsAt"));
 
-            if (paid != FREE && (status == "active" || status == "trialing"))
+            if (paid != NONE && (status == "active" || status == "trialing"))
             {
                 return new Effective { Plan = paid, Source = "Subscription", TrialEndsAt = trialEnds };
             }
-            if (paid != FREE && status == "past_due" && periodEnd.HasValue && periodEnd.Value.AddDays(GRACE_DAYS) > nowUtc)
+            if (paid != NONE && status == "past_due" && periodEnd.HasValue && periodEnd.Value.AddDays(GRACE_DAYS) > nowUtc)
             {
                 return new Effective { Plan = paid, Source = "Grace", TrialEndsAt = trialEnds };
             }
@@ -108,7 +122,7 @@ namespace QueueingApp.Helpers
             {
                 return new Effective { Plan = FULL, Source = "Trial", TrialEndsAt = trialEnds };
             }
-            return new Effective { Plan = FREE, Source = "Free", TrialEndsAt = trialEnds };
+            return new Effective { Plan = NONE, Source = "Expired", TrialEndsAt = trialEnds };
         }
 
         /// <summary>The waiting-customer cap that applies: the lower of the plan's and the shop's own (0 = none).</summary>
@@ -131,8 +145,11 @@ namespace QueueingApp.Helpers
                 ["CanTextCustomers"] = limits.CanTextCustomers,
                 ["CanReorderQueue"] = limits.CanReorderQueue,
                 ["CanUseLearnedEta"] = limits.CanUseLearnedEta,
+                ["Active"] = limits.Active,
             };
         }
+
+        public const string INACTIVE_MESSAGE = "Your free trial has ended. Choose a plan on the Billing page to keep taking customers.";
 
         public static string UpgradeMessage(string feature, string needs = LIMITED)
         {

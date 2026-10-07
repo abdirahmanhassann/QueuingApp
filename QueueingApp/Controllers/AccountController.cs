@@ -28,6 +28,41 @@ namespace QueueingApp.Controllers
             return JsonConvert.SerializeObject(ret, Formatting.Indented);
         }
 
+        // Public: "Register your shop". Creates a shop and its owner's login, then returns a session token.
+        // Limited to a few sign-ups per network address per hour so it can't be used to mass-create trials.
+        [HttpPost("registershop")]
+        public string RegisterShop(RegisterShopRequest req)
+        {
+            string ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (!RegistrationLimiter.TryTake(ip))
+            {
+                return JsonConvert.SerializeObject(new GenericResponse() { Result = false,
+                    ErrorMessage = "Too many sign-ups from this network. Try again in an hour." });
+            }
+            GenericResponse ret = _proc.RegisterShop(req.Name, req.Email, req.Password, req.PhoneNumber,
+                req.ShopName, req.Address, req.Postcode);
+            return JsonConvert.SerializeObject(ret, Formatting.Indented);
+        }
+
+        private static class RegistrationLimiter
+        {
+            private const int PER_HOUR = 5;
+            private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Queue<DateTime>> _hits = new();
+
+            public static bool TryTake(string key)
+            {
+                Queue<DateTime> q = _hits.GetOrAdd(key, _ => new Queue<DateTime>());
+                lock (q)
+                {
+                    DateTime cutoff = DateTime.UtcNow.AddHours(-1);
+                    while (q.Count > 0 && q.Peek() < cutoff) q.Dequeue();
+                    if (q.Count >= PER_HOUR) return false;
+                    q.Enqueue(DateTime.UtcNow);
+                    return true;
+                }
+            }
+        }
+
         // Staff only: the caller's token decides which shop(s) they may add people to.
         // With no token, this works exactly once — to create the very first employee on an empty system.
         [HttpPost("signup")]

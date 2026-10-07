@@ -51,7 +51,8 @@ namespace QueueingApp.Connectivity
 
         public SqlParameter GenerateInputDateTime(string paramName, DateTime? val)
         {
-            return new SqlParameter(paramName, SqlDbType.DateTime)
+            // datetime2 matches the table columns; plain datetime can't hold 0001-01-01 and loses precision.
+            return new SqlParameter(paramName, SqlDbType.DateTime2)
             {
                 Value = (object?)val ?? DBNull.Value
             };

@@ -10,7 +10,7 @@
 
     BEFORE RUNNING: set @Latitude / @Longitude to where you'll be testing from
     (Google Maps: right-click your location -> click the coordinates to copy them).
-    Or leave them and use Staff console -> Shop -> "Use this device's location" afterwards.
+    Or leave them and use  taff console -> Shop -> "Use this device's location" afterwards.
 */
 
 SET NOCOUNT ON;

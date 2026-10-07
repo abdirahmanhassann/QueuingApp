@@ -1,0 +1,22 @@
+# Line (QueueingApp) — runs next to AccessControl on the same server.
+# Joins AccessControl's Docker network so AccessControl's Caddy can reach it and it can reach the shared SQL Server
+# (service "db"). Service names are prefixed "line-" so they never clash with AccessControl's "api"/"web".
+name: line
+services:
+  line-api:
+    image: line-api
+    container_name: line-api
+    env_file: api.env
+    environment:
+      ConnectionStrings__QADB: "Server=db,1433;Database=QUEUINGAPP;User Id=line_app;Password=${LINE_DB_PASSWORD};TrustServerCertificate=True;"
+    restart: unless-stopped
+    networks: [ac]
+  line-web:
+    image: line-web
+    container_name: line-web
+    restart: unless-stopped
+    networks: [ac]
+networks:
+  ac:
+    external: true
+    name: ${AC_NETWORK}

@@ -27,8 +27,9 @@ public class TwilioHelper
 
         _fromNumber = Environment.GetEnvironmentVariable("TWILIO_FROM_NUMBER") ?? throw new InvalidOperationException("TWILIO_FROM_NUMBER not set");
 
-        _serviceSid = serviceSid ?? Environment.GetEnvironmentVariable("TWILIO_VERIFY_SERVICE_SID") ?? throw new InvalidOperationException("TWILIO_VERIFY_SERVICE_SID not set");
-        if (!_serviceSid.StartsWith("VA", StringComparison.OrdinalIgnoreCase))
+        // Only Twilio Verify (SendVerificationAsync) needs this; plain texts and our own codes don't.
+        _serviceSid = serviceSid ?? Environment.GetEnvironmentVariable("TWILIO_VERIFY_SERVICE_SID") ?? "";
+        if (_serviceSid.Length > 0 && !_serviceSid.StartsWith("VA", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("TWILIO_VERIFY_SERVICE_SID does not look like a Verify Service SID (should start with 'VA').");
         }
@@ -48,7 +49,7 @@ public class TwilioHelper
     {
         if (string.IsNullOrWhiteSpace(toNumber)) throw new ArgumentException(nameof(toNumber));
         return await MessageResource.CreateAsync(
-            body: $"Your Verification Code is {code:D6}. It expires in 5 minutes. Do not share it",
+            body: $"Your Line code is {code:D6}. It expires in 5 minutes. Don't share it with anyone.",
             from: new PhoneNumber(_fromNumber),
             to: new PhoneNumber(toNumber)
         );
@@ -92,59 +93,39 @@ public class TwilioHelper
         }
     }
 
-    public async Task<MessageResource> QueueJoinedAsync(string toNumber, string shopName, int? position)
+    // Queue notification texts. Errors from Twilio are left to the caller (QueueProcessor.TrySms), which logs them
+    // and gives the text back to the shop's monthly allowance.
+
+    public Task<MessageResource> QueueJoinedAsync(string toNumber, string shopName, int? position)
     {
-        string place = position.HasValue ? $" You are #{position}." : "";
-        string smsBody = $"You're in the queue at {shopName}.{place} We'll text you when you're next.";
-        try
-        {
-            return await SendPlainMessageAsync(toNumber, smsBody);
-        }
-        catch (ApiException)
-        {
-            return null;
-        }
+        string smsBody = position == 1
+            // No separate "you're next" text follows for someone who joins at the front, so say it now.
+            ? $"You're in the queue at {shopName} and you're next. Please stay nearby."
+            : position.HasValue
+                ? $"You're in the queue at {shopName}. You're #{position}. We'll text you when you're next."
+                : $"You're in the queue at {shopName}. We'll text you when you're next.";
+        return SendPlainMessageAsync(toNumber, smsBody);
     }
 
-    public async Task<MessageResource> NowServingAsync(string toNumber, string shopName)
+    public Task<MessageResource> NowServingAsync(string toNumber, string shopName)
     {
-        try
-        {
-            return await SendPlainMessageAsync(toNumber, $"It's your turn at {shopName}. Come to the chair.");
-        }
-        catch (ApiException)
-        {
-            return null;
-        }
+        return SendPlainMessageAsync(toNumber, $"It's your turn at {shopName}. Come to the chair.");
     }
 
-    public async Task<MessageResource> YoureNextAsync(string toNumber, string shopName)
+    public Task<MessageResource> YoureNextAsync(string toNumber, string shopName)
     {
-        try
-        {
-            return await SendPlainMessageAsync(toNumber, $"You're next at {shopName}. Stay nearby.");
-        }
-        catch (ApiException)
-        {
-            return null;
-        }
+        return SendPlainMessageAsync(toNumber, $"You're next at {shopName}. Please stay nearby.");
     }
 
-    public async Task<MessageResource> QueueCancelledAsync(string toNumber, string shopName)
+    public Task<MessageResource> QueueCancelledAsync(string toNumber, string shopName)
     {
-        try
-        {
-            return await SendPlainMessageAsync(toNumber, $"Your ticket at {shopName} was cancelled. Join again any time.");
-        }
-        catch (ApiException)
-        {
-            return null;
-        }
+        return SendPlainMessageAsync(toNumber, $"Your place in the queue at {shopName} was cancelled. You can join again any time.");
     }
 
     public async Task<VerificationResource> SendVerificationAsync(string toNumber, string channel = "sms", string fallbackChannel = null)
     {
         if (string.IsNullOrWhiteSpace(toNumber)) throw new ArgumentException(nameof(toNumber));
+        if (string.IsNullOrWhiteSpace(_serviceSid)) throw new InvalidOperationException("TWILIO_VERIFY_SERVICE_SID not set");
 
         try
         {

@@ -53,6 +53,7 @@ namespace QueueingApp.Processors
                 }
                 int waitingCount = Convert.ToInt32(shop["WaitingCount"]);
                 int limit = WaitingCapFor(shop) ?? 0;
+                bool active = PlanFor(shop).Effective.IsActive;
                 WaitContext wait = LoadWaitContext(shop, Convert.ToInt32(shop["Id"]));
                 return CreateSuccessResponseWithData(new
                 {
@@ -64,6 +65,8 @@ namespace QueueingApp.Processors
                     EtaMinutes = WaitFor(wait, waitingCount + 1),
                     BreakMinutesLeft = wait.BreakMinutesLeft,
                     JoinsPaused = wait.JoinsPaused,
+                    // No plan in force (trial over, no subscription): not taking customers online.
+                    Inactive = !active,
                     OpeningTime = shop["OpeningTime"] == DBNull.Value ? null : shop["OpeningTime"],
                     ClosingTime = shop["ClosingTime"] == DBNull.Value ? null : shop["ClosingTime"],
                     JoinRadiusMetres = Convert.ToInt32(shop["JoinRadiusMetres"]),
@@ -133,6 +136,11 @@ namespace QueueingApp.Processors
                     return CreateFailureResponse($"You need to be at {shopName} to join. You're about {DescribeDistance(distance)} away.");
                 }
 
+                if (!PlanFor(shop).Effective.IsActive)
+                {
+                    return CreateFailureResponse($"{shopName} isn't taking customers online right now. Ask a member of staff.");
+                }
+
                 int? queueCap = WaitingCapFor(shop);
                 if (queueCap.HasValue && Convert.ToInt32(shop["WaitingCount"]) >= queueCap.Value)
                 {
@@ -151,7 +159,7 @@ namespace QueueingApp.Processors
                 DataRow pending = _db.PendingJoinsCreate(shopId, name, email, phone, enc.Encrypt(code.ToString("D6"), salt), salt);
                 int pendingJoinId = Convert.ToInt32(pending["Id"]);
 
-                string? sendError = SendOtp(shopId, phone, code, out string? devCode);
+                string? sendError = SendOtp(shopId, phone, code);
                 if (sendError != null)
                 {
                     return CreateFailureResponse(sendError);
@@ -163,8 +171,7 @@ namespace QueueingApp.Processors
                     ShopName = shopName,
                     PhoneHint = MaskPhone(phone),
                     ExpiresInSeconds = SecondsUntil(pending["ExpiresAt"]),
-                    ResendAfterSeconds = RESEND_AFTER_SECONDS,
-                    DevCode = devCode
+                    ResendAfterSeconds = RESEND_AFTER_SECONDS
                 });
             }
             catch (SqlException ex)
@@ -197,8 +204,9 @@ namespace QueueingApp.Processors
                 {
                     return CreateFailureResponse("That code has expired. Request a new one.");
                 }
-                int attempts = Convert.ToInt32(pending["Attempts"]);
-                if (attempts >= MAX_OTP_ATTEMPTS)
+                // Each guess is counted before it's checked, so many guesses sent at once can't beat the limit.
+                int used = _db.PendingJoinsTakeAttempt(pendingJoinId, MAX_OTP_ATTEMPTS);
+                if (used < 0)
                 {
                     return CreateFailureResponse("Too many wrong attempts. Request a new code.");
                 }
@@ -210,7 +218,6 @@ namespace QueueingApp.Processors
                 string expected = Convert.ToString(pending["OtpHash"]) ?? "";
                 if (digits.Length != 6 || !KeysMatch(expected, enc.Encrypt(digits, Convert.ToString(pending["OtpSalt"])!)))
                 {
-                    int used = _db.PendingJoinsRecordAttempt(pendingJoinId);
                     int left = Math.Max(MAX_OTP_ATTEMPTS - used, 0);
                     return CreateFailureResponse(left > 0
                         ? $"That code isn't right. {left} {(left == 1 ? "try" : "tries")} left."
@@ -234,17 +241,30 @@ namespace QueueingApp.Processors
 
                 // The queue may have filled up (or the plan changed) while they were typing the code.
                 DataRow joinShop = _db.ShopsGetById(Convert.ToInt32(pending["ShopId"]));
+                if (joinShop != null && !PlanFor(joinShop).Effective.IsActive)
+                {
+                    return CreateFailureResponse($"{joinShop["Name"]} isn't taking customers online right now. Ask a member of staff.");
+                }
                 int? capNow = joinShop == null ? null : WaitingCapFor(joinShop);
                 if (capNow.HasValue && Convert.ToInt32(joinShop!["WaitingCount"]) >= capNow.Value)
                 {
                     return CreateFailureResponse("This shop's queue filled up while you were confirming. Try again in a little while.");
+                }
+                if (joinShop != null)
+                {
+                    int breakLeft = Eta.BreakMinutesLeft(Eta.AsUtc(joinShop["BreakUntil"]), DateTime.UtcNow);
+                    if (breakLeft > 0 && Convert.ToBoolean(joinShop["BreakPausesJoins"]))
+                    {
+                        return CreateFailureResponse($"{joinShop["Name"]} went on a break while you were confirming. Try again in about {breakLeft} minute{(breakLeft == 1 ? "" : "s")}.");
+                    }
                 }
 
                 (object data, int queueEntryId) = CompleteJoin(
                     Convert.ToString(pending["Name"])!,
                     Convert.ToString(pending["Email"])!,
                     Convert.ToString(pending["PhoneNumber"])!,
-                    Convert.ToInt32(pending["ShopId"]));
+                    Convert.ToInt32(pending["ShopId"]),
+                    capNow ?? 0);
                 _db.PendingJoinsComplete(pendingJoinId, queueEntryId);
                 return CreateSuccessResponseWithData(data);
             }
@@ -276,7 +296,7 @@ namespace QueueingApp.Processors
                 }
                 string phone = Convert.ToString(pending["PhoneNumber"]) ?? "";
 
-                string? sendError = SendOtp(Convert.ToInt32(pending["ShopId"]), phone, code, out string? devCode);
+                string? sendError = SendOtp(Convert.ToInt32(pending["ShopId"]), phone, code);
                 if (sendError != null)
                 {
                     return CreateFailureResponse(sendError);
@@ -287,8 +307,7 @@ namespace QueueingApp.Processors
                     PendingJoinId = pendingJoinId,
                     PhoneHint = MaskPhone(phone),
                     ExpiresInSeconds = SecondsUntil(pending["ExpiresAt"]),
-                    ResendAfterSeconds = RESEND_AFTER_SECONDS,
-                    DevCode = devCode
+                    ResendAfterSeconds = RESEND_AFTER_SECONDS
                 });
             }
             catch (SqlException ex)
@@ -306,9 +325,10 @@ namespace QueueingApp.Processors
         }
 
         /// <summary>Puts a verified customer in the queue. Same response shape the old joincustomer returned.</summary>
-        private (object Data, int QueueEntryId) CompleteJoin(string name, string email, string phoneNumber, int shopId)
+        private (object Data, int QueueEntryId) CompleteJoin(string name, string email, string phoneNumber, int shopId, int waitingCap)
         {
-            DataRow join = _db.CreateCustomerJoinQueue(name, email, phoneNumber, shopId);
+            // The database re-checks the cap while holding the shop's lock, so the last place can't be taken twice.
+            DataRow join = _db.CreateCustomerJoinQueue(name, email, phoneNumber, shopId, waitingCap);
             if (join == null)
             {
                 throw new InvalidOperationException("CreateCustomerJoinQueue returned no row.");
@@ -325,6 +345,8 @@ namespace QueueingApp.Processors
                 int? position = entry == null || entry["Position"] == DBNull.Value ? null : Convert.ToInt32(entry["Position"]);
                 string shopName = entry == null ? "" : Convert.ToString(entry["ShopName"]) ?? "";
                 TrySms(shopId, t => t.QueueJoinedAsync(ToE164(phoneNumber), shopName, position).GetAwaiter().GetResult());
+                // Joining straight in at the front: their "you've joined" text already says they're next.
+                NotifyNextWaiting(shopId, skipEntryId: queueEntryId);
             }
 
             return (new
@@ -338,48 +360,54 @@ namespace QueueingApp.Processors
             }, queueEntryId);
         }
 
-        /// <summary>Null on success, otherwise a message for the customer. In Development the code is handed back
-        /// when SMS is not configured or fails (e.g. a Twilio trial account texting an unverified number).</summary>
-        private string? SendOtp(int shopId, string phone, int code, out string? devCode)
+        /// <summary>Null on success, otherwise a message for the customer.
+        /// Demo mode (AppSettings.SmsLive = 0): nothing is sent and the code is handed back to show on screen.
+        /// Live mode: the code is texted. In Development the code is also handed back if the text fails
+        /// (e.g. a Twilio trial account texting an unverified number).</summary>
+        /// <summary>
+        /// Texts the verification code. Codes are only ever sent by text, never shown on screen, so joining needs
+        /// AppSettings.SmsLive = 1 and Twilio configured. Returns an error for the customer, or null when sent.
+        /// </summary>
+        private string? SendOtp(int shopId, string phone, int code)
         {
-            devCode = null;
-            bool isDevelopment = string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
-                "Development", StringComparison.OrdinalIgnoreCase);
-
-            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID"))
-                && !TryUseSms(shopId))
+            const string CANT_SEND = "This shop can't send verification texts right now. Ask a member of staff.";
+            if (!SmsSettings.CanSend(_db))
             {
-                // This month's text allowance (verification codes included) is used up.
-                if (!isDevelopment)
-                {
-                    return "This shop can't send verification texts right now. Ask a member of staff.";
-                }
-            }
-            else if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID")))
-            {
-                try
-                {
-                    TwilioHelper twilio = new();
-                    twilio.SendMessageAsync(phone, code).GetAwaiter().GetResult();
-                    return null;
-                }
-                catch (Exception ex)
-                {
-                    _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
-                        ex.Message + " " + ex.StackTrace, 0);
-                    if (!isDevelopment)
-                    {
-                        return "We couldn't text that number. Check it and try again.";
-                    }
-                }
-            }
-            else if (!isDevelopment)
-            {
-                return "Text messages aren't set up on this server yet. Ask a member of staff.";
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                    "Verification code not sent: texts are switched off (AppSettings.SmsLive = 0) or Twilio isn't configured.", 0);
+                return CANT_SEND;
             }
 
-            devCode = code.ToString("D6");
-            return null;
+            TwilioHelper twilio;
+            try
+            {
+                twilio = new();
+            }
+            catch (Exception ex)
+            {
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                    ex.Message + " " + ex.StackTrace, 0);
+                return CANT_SEND;
+            }
+
+            // This month's text allowance (verification codes included).
+            if (!TryUseSms(shopId))
+            {
+                return CANT_SEND;
+            }
+
+            try
+            {
+                twilio.SendMessageAsync(phone, code).GetAwaiter().GetResult();
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                    ex.Message + " " + ex.StackTrace, 0);
+                ReleaseSms(shopId); // not sent, so it doesn't count
+                return "We couldn't text that number. Check it and try again.";
+            }
         }
 
         /// <summary>Everything needed to estimate waits at one shop right now.</summary>
@@ -563,7 +591,8 @@ namespace QueueingApp.Processors
         {
             try
             {
-                if (status < QueueStatuses.Waiting || status > QueueStatuses.Cancelled)
+                // Staff can take someone to the chair, finish them, or cancel. Nothing goes back to waiting.
+                if (status != QueueStatuses.Serving && status != QueueStatuses.Served && status != QueueStatuses.Cancelled)
                 {
                     return CreateFailureResponse("Unknown queue status.");
                 }
@@ -577,11 +606,8 @@ namespace QueueingApp.Processors
 
                 DataRow updated = _db.QueueEntriesUpdateStatus(id, status);
                 NotifyStatusSms(updated);
-
-                if (status == QueueStatuses.Serving)
-                {
-                    NotifyNextWaiting(shopId);
-                }
+                // Taking someone to the chair, finishing or cancelling can change who's at the front.
+                NotifyNextWaiting(shopId);
 
                 return CreateSuccessResponseWithData(QADB.RowToObject(updated));
             }
@@ -618,6 +644,7 @@ namespace QueueingApp.Processors
                 }
 
                 DataRow updated = _db.QueueEntriesMove(id, newPosition);
+                NotifyNextWaiting(shopId);
                 return CreateSuccessResponseWithData(QADB.RowToObject(updated));
             }
             catch (SqlException ex)
@@ -670,7 +697,11 @@ namespace QueueingApp.Processors
 
                 bool texted = false;
                 string? smsError = null;
-                if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID")))
+                if (!SmsSettings.IsLive(_db))
+                {
+                    smsError = "Texts are in demo mode, so nothing was sent (AppSettings.SmsLive = 0).";
+                }
+                else if (!SmsSettings.TwilioConfigured)
                 {
                     smsError = "Text messages aren't set up on this server.";
                 }
@@ -694,6 +725,7 @@ namespace QueueingApp.Processors
                     {
                         _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
                             ex.Message + " " + ex.StackTrace, accountId);
+                        ReleaseSms(shopId); // not sent, so it doesn't count
                         smsError = "The text couldn't be delivered to this number.";
                     }
                 }
@@ -765,14 +797,28 @@ namespace QueueingApp.Processors
             }
         }
 
-        private void NotifyNextWaiting(int shopId)
+        /// <summary>
+        /// Texts whoever is now first in the queue "you're next" - once. The database remembers who has been told,
+        /// so calling this after every queue change is safe. skipEntryId: claim without texting (they already know).
+        /// </summary>
+        private void NotifyNextWaiting(int shopId, int? skipEntryId = null)
         {
-            DataTable waiting = _db.QueueEntriesGet(shopId, QueueStatuses.Waiting);
-            if (waiting.Rows.Count == 0)
+            DataRow next;
+            try
+            {
+                next = _db.QueueEntriesClaimNextNotify(shopId);
+            }
+            catch (Exception ex)
+            {
+                // Best-effort, like the texts themselves (e.g. MIGRATION_NEXT_NOTIFY.sql not run yet).
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                    ex.Message + " " + ex.StackTrace, 0);
+                return;
+            }
+            if (next == null || (skipEntryId.HasValue && Convert.ToInt32(next["Id"]) == skipEntryId.Value))
             {
                 return;
             }
-            DataRow next = waiting.Rows[0];
             string phone = ToE164(Convert.ToString(next["PhoneNumber"]));
             string shopName = Convert.ToString(next["ShopName"]) ?? "";
             TrySms(shopId, t => t.YoureNextAsync(phone, shopName).GetAwaiter().GetResult());
@@ -814,20 +860,31 @@ namespace QueueingApp.Processors
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID")))
+                if (!SmsSettings.CanSend(_db))
                 {
-                    return;
+                    return; // demo mode or Twilio not configured
                 }
+                // Set up Twilio first so a config problem doesn't use up the shop's allowance.
+                TwilioHelper twilio = new();
                 if (!TryUseSms(shopId))
                 {
                     return;
                 }
-                TwilioHelper twilio = new();
-                send(twilio);
+                try
+                {
+                    send(twilio);
+                }
+                catch
+                {
+                    ReleaseSms(shopId); // not sent, so it doesn't count
+                    throw;
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // SMS is best-effort; queue mutations must still succeed.
+                // SMS is best-effort; queue mutations must still succeed. Log it so a broken setup gets noticed.
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                    ex.Message + " " + ex.StackTrace, 0);
             }
         }
 
@@ -844,11 +901,23 @@ namespace QueueingApp.Processors
             return Plans.WaitingCap(PlanFor(shop).Limits, Convert.ToInt32(shop["QueueLimit"]));
         }
 
+        private void ReleaseSms(int shopId)
+        {
+            try
+            {
+                _db.ShopSmsRelease(shopId);
+            }
+            catch
+            {
+                // best-effort
+            }
+        }
+
         /// <summary>Uses one text from the shop's monthly allowance. False when it's used up.</summary>
         private bool TryUseSms(int shopId)
         {
             DataRow shop = _db.ShopsGetById(shopId);
-            int? allowance = shop == null ? Plans.For(_config, Plans.FREE).SmsPerMonth : PlanFor(shop).Limits.SmsPerMonth;
+            int? allowance = shop == null ? Plans.For(_config, Plans.NONE).SmsPerMonth : PlanFor(shop).Limits.SmsPerMonth;
             return _db.ShopSmsTryConsume(shopId, allowance ?? -1) == 1;
         }
     }

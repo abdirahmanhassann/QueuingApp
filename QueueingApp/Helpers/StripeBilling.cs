@@ -140,6 +140,37 @@ namespace QueueingApp.Helpers
             return EventUtility.ConstructEvent(json, signature ?? "", secret, throwOnApiVersionMismatch: false);
         }
 
+        /// <summary>
+        /// Pulls the customer's subscription straight from Stripe and applies it to the shop. Webhooks normally do
+        /// this, but they can't reach an API running on a developer's computer and can arrive late, so the Billing
+        /// page calls this too. Picks the newest live subscription, else the newest one. Never throws.
+        /// </summary>
+        public static void SyncFromStripe(IConfiguration config, QADB db, int shopId, string customerId)
+        {
+            try
+            {
+                StripeList<Subscription> subs = new SubscriptionService(Client(config)).List(new SubscriptionListOptions
+                {
+                    Customer = customerId,
+                    Status = "all",
+                    Limit = 10,
+                });
+                string[] live = { "active", "trialing", "past_due", "unpaid", "incomplete" };
+                Subscription? pick = subs.Data
+                    .OrderByDescending(s => live.Contains(s.Status))
+                    .ThenByDescending(s => s.Created)
+                    .FirstOrDefault();
+                if (pick != null)
+                {
+                    ApplySubscription(config, db, pick, shopId);
+                }
+            }
+            catch (StripeException)
+            {
+                // Stripe unreachable or the key is wrong: keep what the database already says.
+            }
+        }
+
         public static Subscription GetSubscription(IConfiguration config, string subscriptionId)
         {
             return new SubscriptionService(Client(config)).Get(subscriptionId);
@@ -167,16 +198,31 @@ namespace QueueingApp.Helpers
                 return null;
             }
 
+            // A late event about an old subscription (cancelled, then they bought a new one) must not overwrite the
+            // shop's current subscription. Only a live subscription may replace a different stored one.
+            DataRow shopRow = db.ShopsGetById(shopId.Value);
+            string? currentSubId = shopRow == null || !shopRow.Table.Columns.Contains("StripeSubscriptionId")
+                || shopRow["StripeSubscriptionId"] == DBNull.Value
+                ? null : Convert.ToString(shopRow["StripeSubscriptionId"]);
+            bool isLive = sub.Status is "active" or "trialing" or "past_due" or "unpaid" or "incomplete";
+            if (!string.IsNullOrWhiteSpace(currentSubId) && currentSubId != sub.Id && !isLive)
+            {
+                return shopId;
+            }
+
             SubscriptionItem? item = sub.Items?.Data?.FirstOrDefault();
             (string Plan, string Interval)? mapped = PlanForPrice(config, item?.Price?.Id);
             string status = sub.Status ?? "incomplete";
             // A price we don't recognise (e.g. edited in the dashboard) can't grant a plan.
-            string plan = mapped?.Plan ?? Plans.FREE;
+            string plan = mapped?.Plan ?? Plans.NONE;
             // Since API 2025-03-31 the billing period lives on the subscription item, not the subscription.
             DateTime? periodEnd = item == null ? null : DateTime.SpecifyKind(item.CurrentPeriodEnd, DateTimeKind.Utc);
 
+            // Stripe's portal now schedules a cancellation with cancel_at (a date) instead of cancel_at_period_end,
+            // so either one means "ends at the end of the period".
+            bool cancelling = sub.CancelAtPeriodEnd || (sub.CancelAt.HasValue && status != "canceled");
             db.ShopsUpdateSubscription(shopId.Value, sub.CustomerId ?? "", sub.Id, plan, status, mapped?.Interval,
-                periodEnd, sub.CancelAtPeriodEnd);
+                periodEnd, cancelling);
             return shopId;
         }
     }

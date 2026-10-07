@@ -145,6 +145,88 @@ namespace QueueingApp.Processors
             }
         }
 
+        /// <summary>
+        /// Public business sign-up: creates the shop and the owner's staff login together, then signs them in.
+        /// Returns the session token (same as Login). The shop starts on the 14-day Full trial with no location set
+        /// unless a postcode is given; customers can join once the location is set on the Shop page.
+        /// </summary>
+        public GenericResponse RegisterShop(string? name, string? email, string? password, string? phoneNumber,
+            string? shopName, string? address, string? postcode)
+        {
+            try
+            {
+                name = (name ?? "").Trim();
+                email = (email ?? "").Trim();
+                shopName = (shopName ?? "").Trim();
+                string? phone = string.IsNullOrWhiteSpace(phoneNumber) ? null : phoneNumber.Trim();
+                string? cleanAddress = string.IsNullOrWhiteSpace(address) ? null : address.Trim();
+
+                if (string.IsNullOrWhiteSpace(name) || name.Length > 100)
+                {
+                    return CreateFailureResponse("Enter your name (up to 100 characters).");
+                }
+                if (string.IsNullOrWhiteSpace(email) || email.Length > 255 || !email.Contains('@'))
+                {
+                    return CreateFailureResponse("Enter a valid email address.");
+                }
+                if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+                {
+                    return CreateFailureResponse("Password must be at least 8 characters.");
+                }
+                if (string.IsNullOrWhiteSpace(shopName) || shopName.Length > 200)
+                {
+                    return CreateFailureResponse("Enter your shop's name (up to 200 characters).");
+                }
+                if (phone != null && (phone.Length > 20 || phone.Count(char.IsDigit) < 10))
+                {
+                    return CreateFailureResponse("Enter a valid phone number, or leave it blank.");
+                }
+                if (cleanAddress != null && cleanAddress.Length > 300)
+                {
+                    return CreateFailureResponse("Address is too long (300 characters max).");
+                }
+                if (_db.GetAccountByEmail(email) != null)
+                {
+                    return CreateFailureResponse("That email is already in use. Sign in instead.");
+                }
+
+                string? normalisedPostcode = string.IsNullOrWhiteSpace(postcode) ? null : Geocoding.NormalisePostcode(postcode);
+                decimal? lat = null;
+                decimal? lng = null;
+                if (normalisedPostcode != null)
+                {
+                    (GenericResponse? error, decimal foundLat, decimal foundLng) = LookupPostcode(normalisedPostcode);
+                    if (error != null)
+                    {
+                        return error.Value;
+                    }
+                    lat = foundLat;
+                    lng = foundLng;
+                }
+
+                Encryptor enc = new(_config);
+                string salt = enc.GenerateRandomSalt();
+                DataRow created = _db.RegisterShop(name, email, enc.Encrypt(password!, salt), salt, phone,
+                    shopName, cleanAddress, normalisedPostcode, lat, lng);
+                int userId = Convert.ToInt32(created["UserId"]);
+
+                string token = Guid.NewGuid().ToString();
+                _db.AddAccessToken(userId, token);
+                _db.TouchLastLogin(userId);
+                return CreateSuccessResponseWithData(token);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Message.Contains("already in use"))
+            {
+                return CreateFailureResponse("That email is already in use. Sign in instead.");
+            }
+            catch (Exception ex)
+            {
+                _db.LogError(MethodBase.GetCurrentMethod()?.Module + "/" + MethodBase.GetCurrentMethod()?.Name!,
+                    ex.Message + " " + ex.StackTrace, 0);
+                return CreateFailureResponse(GENERIC_ERROR);
+            }
+        }
+
         public GenericResponse GetMe(int accountId)
         {
             try
@@ -465,9 +547,15 @@ namespace QueueingApp.Processors
                     return CreateFailureResponse("No shop is linked to this account.");
                 }
                 int shopId = Convert.ToInt32(shop["Id"]);
+                bool configured = StripeBilling.IsConfigured(_config);
+                if (configured && shop["StripeCustomerId"] != DBNull.Value)
+                {
+                    // Catch up with Stripe (checkout just finished, plan changed in the portal, webhook not set up).
+                    StripeBilling.SyncFromStripe(_config, _db, shopId, Convert.ToString(shop["StripeCustomerId"])!);
+                    shop = _db.GetShopFromAccount(accountId) ?? shop;
+                }
                 (Plans.Effective plan, Plans.Limits limits) = PlanFor(shop);
                 string? status = shop["SubscriptionStatus"] == DBNull.Value ? null : Convert.ToString(shop["SubscriptionStatus"]);
-                bool configured = StripeBilling.IsConfigured(_config);
 
                 List<object> offered = new();
                 foreach (string p in Plans.ALL)
@@ -476,7 +564,7 @@ namespace QueueingApp.Processors
                     {
                         Plan = p,
                         Limits = Plans.Describe(Plans.For(_config, p)),
-                        Prices = p == Plans.FREE ? null : new
+                        Prices = new
                         {
                             Monthly = PriceFor(p, StripeBilling.MONTHLY),
                             Yearly = PriceFor(p, StripeBilling.YEARLY),
@@ -523,7 +611,7 @@ namespace QueueingApp.Processors
             try
             {
                 string chosen = Plans.Normalise(plan);
-                if (chosen == Plans.FREE)
+                if (chosen == Plans.NONE)
                 {
                     return CreateFailureResponse("Choose the Limited or Full plan.");
                 }
