@@ -1,14 +1,18 @@
 using Microsoft.Data.SqlClient;
+using QueueingApp.Interfaces;
 using System.Data;
+using System.Runtime.CompilerServices;
 
 namespace QueueingApp.Connectivity
 {
     public class QADB
     {
-        private DatabaseConnectivity _conn;
-        public QADB(string connectionString, bool keepAlive)
+        private readonly IConnection _conn;
+        private readonly IKeepAlive _keepAlive;
+        public QADB(IConnection connectionString, IKeepAlive keepAlive)
         {
-            _conn = new(connectionString, keepAlive);
+            _conn = connectionString;
+            _keepAlive = keepAlive;
         }
 
         public static Dictionary<string, object?> RowToObject(DataRow row)

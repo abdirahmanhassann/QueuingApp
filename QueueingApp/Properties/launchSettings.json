@@ -8,11 +8,6 @@
       "applicationUrl": "http://0.0.0.0:5038",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "TWILIO_ACCOUNT_SID": "REPLACE_WITH_TWILIO_ACCOUNT_SID",
-        "TWILIO_VERIFY_SERVICE_SID": "REPLACE_WITH_TWILIO_VERIFY_SERVICE_SID",
-        "TWILIO_AUTH_TOKEN": "REPLACE_WITH_TWILIO_AUTH_TOKEN",
-        "TWILIO_FROM_NUMBER": "+440000000000",
-        "TWILIO_TO_NUMBER": "+440000000000"
       }
     },
     "https": {
@@ -22,11 +17,6 @@
       "applicationUrl": "https://localhost:7044;http://0.0.0.0:5038",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "TWILIO_ACCOUNT_SID": "REPLACE_WITH_TWILIO_ACCOUNT_SID",
-        "TWILIO_VERIFY_SERVICE_SID": "REPLACE_WITH_TWILIO_VERIFY_SERVICE_SID",
-        "TWILIO_AUTH_TOKEN": "REPLACE_WITH_TWILIO_AUTH_TOKEN",
-        "TWILIO_FROM_NUMBER": "+440000000000",
-        "TWILIO_TO_NUMBER": "+440000000000"
       }
     }
   }

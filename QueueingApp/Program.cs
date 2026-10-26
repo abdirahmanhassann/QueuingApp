@@ -1,5 +1,7 @@
 using QueueingApp.Helpers;
-
+using Microsoft.Extensions.DependencyInjection;
+using QueueingApp.Interfaces;
+using QueueingApp.Connectivity;
 namespace QueueingApp
 {
     public class Program
@@ -44,6 +46,7 @@ namespace QueueingApp
             builder.Services.AddOpenApi();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
+            builder.Services.AddSingleton<IDatabaseConnectivity, DatabaseConnectivity>();
             builder.Services.AddCors(options =>
             {
                 options.AddDefaultPolicy(policy =>

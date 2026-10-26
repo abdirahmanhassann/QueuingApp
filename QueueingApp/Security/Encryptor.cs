@@ -1,4 +1,4 @@
-﻿using System.Data.SqlTypes;
+using System.Data.SqlTypes;
 using static System.Text.Encoding;
 using System.Security.Cryptography;
 using System.Text.Unicode;
@@ -8,11 +8,15 @@ namespace QueueingApp.Security
     public class Encryptor
     {
 
-        private string _key = "***REMOVED_ENCRYPTION_KEY***";
+        private readonly string _key;
         private QADB _db;
 
         public Encryptor(IConfiguration config)
         {
+            // Never hard-code this. Set it with: dotnet user-secrets set "Security:EncryptionKey" "<value>"
+            // (or the Security__EncryptionKey environment variable on a server).
+            _key = config["Security:EncryptionKey"]
+                ?? throw new InvalidOperationException("Security:EncryptionKey is not configured. See README.md.");
             _db = new(config.GetSection("ConnectionStrings:QADB").Get<string>()!, false);
         }
 

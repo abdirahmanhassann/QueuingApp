@@ -365,3 +365,7 @@ FodyWeavers.xsd
 # Private per-machine settings (API keys)
 appsettings.Local.json
 *.local.sql
+
+# Local secrets and deploy env files
+deploy/.env
+deploy/*.env

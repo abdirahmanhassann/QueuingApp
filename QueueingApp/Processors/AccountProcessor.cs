@@ -13,10 +13,10 @@ namespace QueueingApp.Processors
         private IConfiguration _config;
         private QADB _db;
 
-        public AccountProcessor(IConfiguration config)
+        public AccountProcessor(IConfiguration config, IKeepAlive? keepAlive)
         {
             _config = config;
-            _db = new(config.GetSection("ConnectionStrings:QADB").Get<string>()!, false);
+            _db = new(config.GetSection("ConnectionStrings:QADB").Get<IConnection>()!, keepAlive);
         }
 
         public GenericResponse Login(string email, string password)

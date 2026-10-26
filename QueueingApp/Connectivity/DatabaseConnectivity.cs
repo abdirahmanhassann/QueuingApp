@@ -1,9 +1,10 @@
 using Microsoft.Data.SqlClient;
+using QueueingApp.Interfaces;
 using System.Data;
 
 namespace QueueingApp.Connectivity
 {
-    public class DatabaseConnectivity
+    public class DatabaseConnectivity : IDatabaseConnectivity
     {
 
         private SqlConnection _sqlConnection;
@@ -18,13 +19,13 @@ namespace QueueingApp.Connectivity
             _keepAlive = keepAlive;
         }
 
-        public void CloseConnection()
+        void IDatabaseConnectivity.CloseConnection()
         {
             _sqlConnection?.Close();
         }
 
 
-        public SqlParameter GenerateInputInteger(string paramName, int val)
+        SqlParameter IDatabaseConnectivity.GenerateInputInteger(string paramName, int val)
         {
             return new SqlParameter(paramName, SqlDbType.Int, 0)
             {
@@ -32,7 +33,7 @@ namespace QueueingApp.Connectivity
             };
         }
 
-        public SqlParameter GenerateInputDecimal(string paramName, decimal val)
+        SqlParameter IDatabaseConnectivity.GenerateInputDecimal(string paramName, decimal val)
         {
             return new SqlParameter(paramName, SqlDbType.Decimal, 0)
             {
@@ -41,7 +42,7 @@ namespace QueueingApp.Connectivity
         }
 
 
-        public SqlParameter GenerateInputString(string paramName, string? val, int length = 2000)
+        SqlParameter IDatabaseConnectivity.GenerateInputString(string paramName, string? val, int length = 2000)
         {
             return new SqlParameter(paramName, SqlDbType.NVarChar, length)
             {
@@ -49,7 +50,7 @@ namespace QueueingApp.Connectivity
             };
         }
 
-        public SqlParameter GenerateInputDateTime(string paramName, DateTime? val)
+        SqlParameter IDatabaseConnectivity.GenerateInputDateTime(string paramName, DateTime? val)
         {
             // datetime2 matches the table columns; plain datetime can't hold 0001-01-01 and loses precision.
             return new SqlParameter(paramName, SqlDbType.DateTime2)
@@ -58,7 +59,7 @@ namespace QueueingApp.Connectivity
             };
         }
 
-        public SqlParameter GenerateInputLong(string paramName, long val)
+        SqlParameter IDatabaseConnectivity.GenerateInputLong(string paramName, long val)
         {
             return new SqlParameter(paramName, SqlDbType.BigInt, 0)
             {
@@ -66,7 +67,7 @@ namespace QueueingApp.Connectivity
             };
         }
 
-        public SqlParameter GenerateInputBool(string paramName, bool val)
+        SqlParameter IDatabaseConnectivity.GenerateInputBool(string paramName, bool val)
         {
             return new SqlParameter(paramName, SqlDbType.Bit, 0)
             {
@@ -74,7 +75,7 @@ namespace QueueingApp.Connectivity
             };
         }
 
-        public SqlParameter GenerateInputCurrency(string paramName, decimal val)
+        SqlParameter IDatabaseConnectivity.GenerateInputCurrency(string paramName, decimal val)
         {
             return new SqlParameter(paramName, SqlDbType.Money, 0)
             {
@@ -83,7 +84,7 @@ namespace QueueingApp.Connectivity
             };
         }
 
-        public SqlParameter GenerateInputStringList(string paramName, DataTable vals)
+        SqlParameter IDatabaseConnectivity.GenerateInputStringList(string paramName, DataTable vals)
         {
 
             SqlParameter ret = new()
@@ -98,7 +99,7 @@ namespace QueueingApp.Connectivity
 
         }
 
-        public SqlParameter GenerateInputIntList(string paramName, DataTable vals)
+        SqlParameter IDatabaseConnectivity.GenerateInputIntList(string paramName, DataTable vals)
         {
 
             SqlParameter ret = new()
@@ -113,7 +114,7 @@ namespace QueueingApp.Connectivity
 
         }
 
-        public DataTable ExecuteStoredProcedureAsDataTable(string spName, SqlParameter[]? sqlParams)
+        DataTable IDatabaseConnectivity.ExecuteStoredProcedureAsDataTable(string spName, SqlParameter[]? sqlParams)
         {
             Exception thrownException = null!;
             DataTable table = new DataTable();
@@ -154,7 +155,7 @@ namespace QueueingApp.Connectivity
         }
 
 
-        public DataRow ExecuteStoredProcedureAsDataRow(string spName, SqlParameter[]? sqlParams)
+        DataRow IDatabaseConnectivity.ExecuteStoredProcedureAsDataRow(string spName, SqlParameter[]? sqlParams)
         {
             Exception thrownException = null!;
             DataTable table = new DataTable();
@@ -195,7 +196,7 @@ namespace QueueingApp.Connectivity
         }
 
 
-        public void ExecuteStoredProcedureNoReturn(string spName, SqlParameter[]? sqlParams)
+        void IDatabaseConnectivity.ExecuteStoredProcedureNoReturn(string spName, SqlParameter[]? sqlParams)
         {
             Exception thrownException = null!;
             try
@@ -232,7 +233,7 @@ namespace QueueingApp.Connectivity
 
         }
 
-        public int ExecuteStoredProcedureAsScalarInt(string spName, SqlParameter[]? sqlParams)
+        int IDatabaseConnectivity.ExecuteStoredProcedureAsScalarInt(string spName, SqlParameter[]? sqlParams)
         {
             Exception thrownException = null!;
             int scalarInt = 0;
@@ -273,7 +274,7 @@ namespace QueueingApp.Connectivity
 
         }
 
-        public long ExecuteStoredProcedureAsScalarLong(string spName, SqlParameter[]? sqlParams)
+        long IDatabaseConnectivity.ExecuteStoredProcedureAsScalarLong(string spName, SqlParameter[]? sqlParams)
         {
             Exception thrownException = null!;
             long scalarLong = 0;
@@ -313,7 +314,7 @@ namespace QueueingApp.Connectivity
 
         }
 
-        public string? ExecuteStoredProcedureAsScalarString(string spName, SqlParameter[]? sqlParams)
+        string? IDatabaseConnectivity.ExecuteStoredProcedureAsScalarString(string spName, SqlParameter[]? sqlParams)
         {
             Exception thrownException = null!;
             string scalarString = "";
@@ -355,7 +356,7 @@ namespace QueueingApp.Connectivity
 
 
 
-        public DataTable ExecuteRawSQLAsDataTable(string sql)
+        DataTable IDatabaseConnectivity.ExecuteRawSQLAsDataTable(string sql)
         {
             Exception thrownException = null!;
             DataTable table = new DataTable();
@@ -391,7 +392,7 @@ namespace QueueingApp.Connectivity
         }
 
 
-        public DataRow ExecuteRawSQLAsDataRow(string sql)
+        DataRow IDatabaseConnectivity.ExecuteRawSQLAsDataRow(string sql)
         {
             Exception thrownException = null!;
             DataRow row = null!;
@@ -432,7 +433,7 @@ namespace QueueingApp.Connectivity
         }
 
 
-        public void ExecuteRawSQLNoReturn(string sql)
+        void IDatabaseConnectivity.ExecuteRawSQLNoReturn(string sql)
         {
             Exception thrownException = null!;
             try
